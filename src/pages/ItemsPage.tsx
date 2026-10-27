@@ -196,7 +196,7 @@ export const ItemsPage: React.FC = () => {
   // Inline Add Category
   const handleAddCategorySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCatName.trim() || !newCatPrefix.trim()) return;
+    if (!newCatName.trim()) return;
 
     setCatError('');
     setIsAddingCat(true);
@@ -207,7 +207,6 @@ export const ItemsPage: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: newCatName.trim(),
-          prefix: newCatPrefix.trim().toUpperCase(),
         }),
       });
 
@@ -798,21 +797,9 @@ export const ItemsPage: React.FC = () => {
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
                   autoFocus
                 />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  بادئة الكود الإنجليزية (Prefix) *
-                </label>
-                <input
-                  type="text"
-                  required
-                  maxLength={5}
-                  placeholder="مثال: WOD أو PNT"
-                  value={newCatPrefix}
-                  onChange={(e) => setNewCatPrefix(e.target.value.toUpperCase())}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-left dir-ltr"
-                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  * سيتم توليد بادئة الكود تلقائياً بواسطة النظام بنمط تسلسلي.
+                </p>
               </div>
 
               <div className="pt-2 flex gap-2">

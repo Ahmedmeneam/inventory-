@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { db } from '../db/index.ts';
 import { custodies, users, items, warehouses, movements } from '../db/schema.ts';
 import { count, eq, ne, desc } from 'drizzle-orm';

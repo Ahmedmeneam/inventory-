@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { db, sqlite } from '../db/index.ts';
 import { units, categories, items, custodyItems, itemProposals, custodies, stockBalances, auditLogs } from '../db/schema.ts';
 import { eq, and, sql } from 'drizzle-orm';
@@ -62,13 +62,24 @@ itemsRouter.get('/categories', async (_req: Request, res: Response) => {
 itemsRouter.post('/categories', async (req: Request, res: Response) => {
   try {
     const { name, prefix } = req.body;
-    if (!name || !prefix) {
-      res.status(400).json({ error: 'يرجى إدخال اسم وبادئة التصنيف' });
+    if (!name || !name.trim()) {
+      res.status(400).json({ error: 'يرجى إدخال اسم التصنيف' });
       return;
     }
 
     const cleanName = name.trim();
-    const cleanPrefix = prefix.trim().toUpperCase();
+    let cleanPrefix = prefix ? prefix.trim().toUpperCase() : '';
+
+    if (!cleanPrefix) {
+      const allCats = db.select().from(categories).all();
+      const nextNum = allCats.length + 1;
+      cleanPrefix = `CAT${String(nextNum).padStart(2, '0')}`;
+      let salt = 1;
+      while (allCats.some((c) => c.prefix === cleanPrefix)) {
+        cleanPrefix = `CAT${String(nextNum + salt).padStart(2, '0')}`;
+        salt++;
+      }
+    }
 
     const existing = db.select().from(categories).where(eq(categories.prefix, cleanPrefix)).get();
     if (existing) {
@@ -81,6 +92,44 @@ itemsRouter.post('/categories', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error creating category:', error);
     res.status(500).json({ error: 'فشل إنشاء التصنيف' });
+  }
+});
+
+// POST /api/items/bulk-categorize - Assign category to multiple items at once
+itemsRouter.post('/items/bulk-categorize', async (req: Request, res: Response) => {
+  try {
+    const { itemIds, categoryId } = req.body;
+    if (!Array.isArray(itemIds) || itemIds.length === 0) {
+      res.status(400).json({ error: 'يرجى اختيار صنف واحد على الأقل' });
+      return;
+    }
+
+    const catId = categoryId ? Number(categoryId) : null;
+    if (catId) {
+      const category = db.select().from(categories).where(eq(categories.id, catId)).get();
+      if (!category) {
+        res.status(404).json({ error: 'التصنيف المحدد غير موجود' });
+        return;
+      }
+    }
+
+    const updateStmt = sqlite.prepare('UPDATE items SET category_id = ? WHERE id = ?');
+    const transaction = sqlite.transaction(() => {
+      for (const id of itemIds) {
+        updateStmt.run(catId, Number(id));
+      }
+    });
+
+    transaction();
+
+    res.json({
+      success: true,
+      message: `تم تحديث تصنيف ${itemIds.length} صنف بنجاح`,
+      updatedCount: itemIds.length,
+    });
+  } catch (error) {
+    console.error('Error in bulk categorize:', error);
+    res.status(500).json({ error: 'فشل التحديث الجماعي للتصنيف' });
   }
 });
 
@@ -110,6 +159,8 @@ itemsRouter.get('/items', async (_req: Request, res: Response) => {
 
     const result = allItems.map((it) => ({
       ...it,
+      category_name: it.category_name || 'بدون تصنيف',
+      category_prefix: it.category_prefix || 'ITEM',
       min_limit: fromMilli(it.min_limit_milli),
     }));
 
@@ -125,15 +176,14 @@ itemsRouter.post('/items', async (req: Request, res: Response) => {
   try {
     const { name, categoryId, unitId, minLimit, customCode } = req.body;
 
-    if (!name || !categoryId || !unitId) {
-      res.status(400).json({ error: 'يرجى استكمال البيانات الإلزامية للصنف' });
+    if (!name || !unitId) {
+      res.status(400).json({ error: 'يرجى إدخال اسم الصنف ووحدة القياس' });
       return;
     }
 
-    const category = db.select().from(categories).where(eq(categories.id, Number(categoryId))).get();
-    if (!category) {
-      res.status(400).json({ error: 'التصنيف المحدد غير موجود' });
-      return;
+    let category = null;
+    if (categoryId) {
+      category = db.select().from(categories).where(eq(categories.id, Number(categoryId))).get();
     }
 
     const unit = db.select().from(units).where(eq(units.id, Number(unitId))).get();
@@ -146,10 +196,20 @@ itemsRouter.post('/items', async (req: Request, res: Response) => {
     if (customCode && customCode.trim()) {
       itemCode = customCode.trim().toUpperCase();
     } else {
-      // Auto sequential code by prefix: e.g. WOD-0001
-      const categoryItems = db.select().from(items).where(eq(items.categoryId, category.id)).all();
-      const nextSeq = categoryItems.length + 1;
-      itemCode = `${category.prefix}-${String(nextSeq).padStart(4, '0')}`;
+      // Auto sequential code by prefix: e.g. WOD-0001 or ITEM-0001
+      const prefix = category ? category.prefix : 'ITEM';
+      const allItemsWithPrefix = db
+        .select()
+        .from(items)
+        .all()
+        .filter((i) => i.itemCode.startsWith(`${prefix}-`));
+      const nextSeq = allItemsWithPrefix.length + 1;
+      itemCode = `${prefix}-${String(nextSeq).padStart(4, '0')}`;
+      let salt = 1;
+      while (db.select().from(items).where(eq(items.itemCode, itemCode)).get()) {
+        itemCode = `${prefix}-${String(nextSeq + salt).padStart(4, '0')}`;
+        salt++;
+      }
     }
 
     // Verify code uniqueness
@@ -166,7 +226,7 @@ itemsRouter.post('/items', async (req: Request, res: Response) => {
       .values({
         itemCode,
         name: name.trim(),
-        categoryId: category.id,
+        categoryId: category ? category.id : null,
         unitId: unit.id,
         minLimitMilli,
         createdAt: new Date().toISOString(),
@@ -179,15 +239,16 @@ itemsRouter.post('/items', async (req: Request, res: Response) => {
       message: 'تم إضافة الصنف للكتالوج المركزي بنجاح',
       item: {
         ...newItem,
-        min_limit: fromMilli(newItem.minLimitMilli),
-        category_name: category.name,
+        category_name: category?.name || 'بدون تصنيف',
+        category_prefix: category?.prefix || 'ITEM',
         unit_name: unit.name,
         unit_symbol: unit.symbol,
+        min_limit: fromMilli(newItem.minLimitMilli),
       },
     });
   } catch (error) {
-    console.error('Error creating item:', error);
-    res.status(500).json({ error: 'فشل إنشاء الصنف في الكتالوج المركزي' });
+    console.error('Error creating central item:', error);
+    res.status(500).json({ error: 'فشل إضافة الصنف للكتالوج' });
   }
 });
 
@@ -233,6 +294,7 @@ itemsRouter.get('/custodies/:id/items', async (req: Request, res: Response) => {
 
       return {
         ...it,
+        category_name: it.category_name || 'بدون تصنيف',
         min_limit: fromMilli(it.min_limit_milli),
         quantity: fromMilli(qtyMilli),
         reserved_qty: fromMilli(reservedMilli),

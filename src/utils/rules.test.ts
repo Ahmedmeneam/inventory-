@@ -12,7 +12,7 @@ import {
   generateTemporaryPassword,
   generateItemCode,
   validateImportRowData,
-} from './rules';
+} from './rules.ts';
 
 test('milli conversions preserve precision up to 3 decimals', () => {
   assert.equal(toMilli(5.25), 5250);

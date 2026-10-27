@@ -14,20 +14,22 @@ import {
   Shield,
   Building,
   Phone,
-  CheckCircle2,
   LayoutDashboard,
+  Lock,
 } from 'lucide-react';
 
 interface AppHeaderProps {
   onToggleSidebar?: () => void;
   companyName?: string;
   onNavigate?: (tab: string) => void;
+  onLockScreen?: () => void;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
   onToggleSidebar,
   companyName = 'إدارة العهد والمخازن',
   onNavigate,
+  onLockScreen,
 }) => {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -251,6 +253,19 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                 </div>
               )}
             </div>
+          )}
+
+          {/* Screen Lock Button */}
+          {user && onLockScreen && (
+            <button
+              type="button"
+              onClick={onLockScreen}
+              className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title="قفل الشاشة فورياً لحماية الجلسة"
+              aria-label="قفل الشاشة"
+            >
+              <Lock className="w-4 h-4 text-indigo-500" />
+            </button>
           )}
 
           {/* Theme Quick Toggle */}

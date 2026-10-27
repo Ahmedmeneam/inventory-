@@ -9,6 +9,7 @@ interface AuthContextType {
   updateUser: (partial: Partial<User>) => void;
   isIdleLocked: boolean;
   unlockIdleSession: (password: string) => Promise<boolean>;
+  lockScreen: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -19,6 +20,7 @@ const AuthContext = createContext<AuthContextType>({
   updateUser: () => {},
   isIdleLocked: false,
   unlockIdleSession: async () => false,
+  lockScreen: () => {},
 });
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes idle timeout
@@ -118,6 +120,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const lockScreen = useCallback(() => {
+    if (user) {
+      setIsIdleLocked(true);
+    }
+  }, [user]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -128,6 +136,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updateUser,
         isIdleLocked,
         unlockIdleSession,
+        lockScreen,
       }}
     >
       {children}

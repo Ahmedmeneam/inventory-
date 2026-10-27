@@ -39,12 +39,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const adminNav = [
     { id: 'dashboard', label: 'لوحة التحكم', icon: LayoutDashboard },
-    { id: 'custodies', label: 'إدارة العهد والمخازن', icon: Building },
+    { id: 'custodies', label: 'الهيكل التنظيمي والعهد والمخازن', icon: Building },
     { id: 'users', label: 'إدارة الحسابات والأمان', icon: Users },
-    { id: 'items', label: 'إدارة الأصناف', icon: Boxes },
-    { id: 'units', label: 'دليل وحدات القياس', icon: Ruler },
+    { id: 'items', label: 'كتالوج الأصناف المركزي', icon: Boxes },
     { id: 'settings', label: 'إعدادات الحساب والنظام', icon: Shield },
-    { id: 'ledger', label: 'السجل العام والتقارير', icon: FileSpreadsheet },
+    { id: 'inventory', label: 'الجرد الدوري والإقفال السنوي', icon: Layers },
+    { id: 'ledger', label: 'السجل العام وكشوف الحساب', icon: FileSpreadsheet },
     { id: 'backup', label: 'النسخ الاحتياطي والاستعادة', icon: Database },
   ];
 

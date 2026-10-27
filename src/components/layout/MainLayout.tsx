@@ -19,7 +19,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
 }) => {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const { isIdleLocked, unlockIdleSession, user, logout } = useAuth();
+  const { isIdleLocked, unlockIdleSession, lockScreen, user, logout } = useAuth();
   const [unlockPassword, setUnlockPassword] = useState('');
   const [unlockError, setUnlockError] = useState('');
   const [isUnlocking, setIsUnlocking] = useState(false);
@@ -44,6 +44,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
         onToggleSidebar={() => setIsMobileSidebarOpen((prev) => !prev)}
         companyName={companyName}
         onNavigate={onSelectTab}
+        onLockScreen={lockScreen}
       />
 
       <div className="flex-1 flex w-full">

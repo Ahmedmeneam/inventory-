@@ -10,11 +10,13 @@ import { SettingsPage } from './pages/SettingsPage.tsx';
 import { CustodyDashboardPage } from './pages/CustodyDashboardPage.tsx';
 import { CustodiesPage } from './pages/CustodiesPage.tsx';
 import { ItemsPage } from './pages/ItemsPage.tsx';
-import { UnitsPage } from './pages/UnitsPage.tsx';
 import { CustodyItemsPage } from './pages/CustodyItemsPage.tsx';
 import { MovementsPage } from './pages/MovementsPage.tsx';
 import { PendingMovementsPage } from './pages/PendingMovementsPage.tsx';
 import { DelegationSettingsPage } from './pages/DelegationSettingsPage.tsx';
+import { GeneralLedgerPage } from './pages/GeneralLedgerPage.tsx';
+import { InventoryPage } from './pages/InventoryPage.tsx';
+import { BackupPage } from './pages/BackupPage.tsx';
 import { Loader2 } from 'lucide-react';
 
 function AppContent() {
@@ -90,21 +92,25 @@ function AppContent() {
           <CustodiesPage />
         ) : activeTab === 'items' ? (
           <ItemsPage />
-        ) : activeTab === 'units' ? (
-          <UnitsPage />
+        ) : activeTab === 'inventory' ? (
+          <InventoryPage />
+        ) : activeTab === 'ledger' ? (
+          <GeneralLedgerPage />
         ) : activeTab === 'movements' ? (
           <MovementsPage />
         ) : activeTab === 'pending' ? (
           <PendingMovementsPage />
         ) : activeTab === 'delegation' ? (
           <DelegationSettingsPage />
+        ) : activeTab === 'backup' ? (
+          <BackupPage />
         ) : (
           <div className="p-8 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-center space-y-3">
             <h2 className="text-base font-bold text-slate-800 dark:text-slate-200">
-              تبويب «{activeTab}» مخصص للتنفيذ في المراحل القادمة
+              لوحة التحكم المركزية
             </h2>
             <p className="text-xs text-slate-500 max-w-md mx-auto">
-              وفقاً لقاعدة الوقوف والمراجعة الإجبارية بين المراحل (Strict Phase Gate Protocol)، سيتم تفعيل السجل العام وكشوف الحساب في المرحلة 4، والجرد السنوي في المرحلة 5.
+              اكتملت جميع مراحل النظام بنجاح (المراحل 1 إلى 6). يمكنك إدارة كافة العمليات من القائمة الجانبية.
             </p>
             <button
               type="button"
@@ -120,12 +126,18 @@ function AppContent() {
           <CustodyItemsPage />
         ) : activeTab === 'settings' ? (
           <SettingsPage companyName={setupStatus.companyName} onNavigate={setActiveTab} />
+        ) : activeTab === 'inventory' ? (
+          <InventoryPage />
         ) : activeTab === 'movements' ? (
           <MovementsPage />
         ) : activeTab === 'pending' ? (
           <PendingMovementsPage />
         ) : activeTab === 'delegation' ? (
           <DelegationSettingsPage />
+        ) : activeTab === 'ledger' ? (
+          <GeneralLedgerPage />
+        ) : activeTab === 'backup' ? (
+          <BackupPage />
         ) : (
           <CustodyDashboardPage onNavigate={setActiveTab} />
         )

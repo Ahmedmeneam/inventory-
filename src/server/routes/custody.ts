@@ -1,7 +1,7 @@
-import { Router, Request, Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { db, sqlite } from '../db/index.ts';
-import { custodies, warehouses, users, stockBalances, movements, auditLogs } from '../db/schema.ts';
-import { eq, and, sql, sum } from 'drizzle-orm';
+import { custodies, warehouses, users, stockBalances, movements, auditLogs, companySettings } from '../db/schema.ts';
+import { eq, and, sql, sum, count } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 
 export const custodyRouter = Router();
@@ -55,22 +55,119 @@ custodyRouter.get('/', async (_req: Request, res: Response) => {
   }
 });
 
+// GET /api/custodies/organization - Complete Company Organizational Structure
+custodyRouter.get('/organization', async (_req: Request, res: Response) => {
+  try {
+    const company = db.select().from(companySettings).get();
+
+    // General Company Warehouses
+    const generalWarehouses = db
+      .select()
+      .from(warehouses)
+      .where(eq(warehouses.isGeneral, true))
+      .all();
+
+    // All custodies with their warehouses & users
+    const allCustodies = db.select().from(custodies).all();
+    const custodiesWithDetails = allCustodies.map((cust) => {
+      const custWarehouses = db
+        .select()
+        .from(warehouses)
+        .where(eq(warehouses.custodyId, cust.id))
+        .all();
+
+      const assignedUsers = db
+        .select({
+          id: users.id,
+          user_code: users.userCode,
+          full_name: users.fullName,
+          role: users.role,
+        })
+        .from(users)
+        .where(eq(users.custodyId, cust.id))
+        .all();
+
+      const mainWarehouse = custWarehouses.find((w) => w.isMain);
+
+      return {
+        ...cust,
+        main_warehouse: mainWarehouse || null,
+        warehouses: custWarehouses,
+        users: assignedUsers,
+        users_count: assignedUsers.length,
+      };
+    });
+
+    res.json({
+      company: company || { company_name: 'الشركة' },
+      general_warehouses: generalWarehouses,
+      custodies: custodiesWithDetails,
+    });
+  } catch (error) {
+    console.error('Error fetching organization structure:', error);
+    res.status(500).json({ error: 'خطأ في جلب الهيكل التنظيمي للشركة' });
+  }
+});
+
+// PUT /api/custodies/company - Update company name
+custodyRouter.put('/company', async (req: Request, res: Response) => {
+  try {
+    const { companyName } = req.body;
+    if (!companyName || !companyName.trim()) {
+      res.status(400).json({ error: 'يرجى إدخال اسم الشركة' });
+      return;
+    }
+
+    const cleanName = companyName.trim();
+    const current = db.select().from(companySettings).get();
+
+    if (current) {
+      db.update(companySettings)
+        .set({ companyName: cleanName })
+        .where(eq(companySettings.id, current.id))
+        .run();
+    } else {
+      db.insert(companySettings)
+        .values({
+          companyName: cleanName,
+          isConfigured: 1,
+          createdAt: new Date().toISOString(),
+        })
+        .run();
+    }
+
+    res.json({ success: true, message: 'تم تحديث اسم الشركة بنجاح', companyName: cleanName });
+  } catch (error) {
+    console.error('Error updating company name:', error);
+    res.status(500).json({ error: 'فشل تحديث اسم الشركة' });
+  }
+});
+
 // POST /api/custodies - Create new custody and automatically provision its Main Warehouse (is_main = true)
 custodyRouter.post('/', async (req: Request, res: Response) => {
   try {
     const { code, name } = req.body;
 
-    if (!code || !name) {
-      res.status(400).json({ error: 'يرجى إدخال رمز واسم العهدة' });
+    if (!name || !name.trim()) {
+      res.status(400).json({ error: 'يرجى إدخال اسم العهدة' });
       return;
     }
 
-    const cleanCode = code.trim().toUpperCase();
     const cleanName = name.trim();
+    let cleanCode = code ? code.trim().toUpperCase() : '';
 
-    if (cleanCode.length < 2 || cleanCode.length > 8) {
-      res.status(400).json({ error: 'رمز العهدة يجب أن يكون بين 2 إلى 8 أحرف إنجليزية' });
-      return;
+    // If code is not provided by the user, automatically generate sequential code
+    if (!cleanCode) {
+      const countRes = db.select({ count: count() }).from(custodies).get();
+      const nextNum = (countRes?.count || 0) + 1;
+      cleanCode = `CUST-${String(nextNum).padStart(3, '0')}`;
+      let exists = db.select().from(custodies).where(eq(custodies.code, cleanCode)).get();
+      let salt = 1;
+      while (exists) {
+        cleanCode = `CUST-${String(nextNum + salt).padStart(3, '0')}`;
+        exists = db.select().from(custodies).where(eq(custodies.code, cleanCode)).get();
+        salt++;
+      }
     }
 
     // Check code uniqueness

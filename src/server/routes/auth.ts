@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { db } from '../db/index.ts';
 import { users, custodies, auditLogs } from '../db/schema.ts';
@@ -194,6 +194,41 @@ authRouter.post('/verify-admin', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Admin verify error:', error);
     res.status(500).json({ error: 'فشل التحقق الأمني' });
+  }
+});
+
+// POST /api/auth/verify-password (used to unlock idle screen lock)
+authRouter.post('/verify-password', async (req: Request, res: Response) => {
+  try {
+    const { userId, password } = req.body;
+    if (!userId || !password) {
+      res.status(400).json({ error: 'بيانات التحقق غير مكتملة' });
+      return;
+    }
+
+    const user = db.select().from(users).where(eq(users.id, Number(userId))).get();
+    if (!user) {
+      res.status(404).json({ error: 'المستخدم غير موجود' });
+      return;
+    }
+
+    let isValid = false;
+    if (user.passwordHash) {
+      isValid = bcrypt.compareSync(password, user.passwordHash);
+    }
+    if (!isValid && user.tempPasswordHash) {
+      isValid = bcrypt.compareSync(password, user.tempPasswordHash);
+    }
+
+    if (!isValid) {
+      res.status(401).json({ error: 'كلمة المرور غير صحيحة' });
+      return;
+    }
+
+    res.json({ success: true, verified: true });
+  } catch (error) {
+    console.error('Verify password error:', error);
+    res.status(500).json({ error: 'فشل التحقق من كلمة المرور' });
   }
 });
 

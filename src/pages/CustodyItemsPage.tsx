@@ -15,6 +15,10 @@ import {
   FolderPlus,
   Tag,
   Warehouse,
+  CheckSquare,
+  Square,
+  X,
+  Layers,
 } from 'lucide-react';
 
 export const CustodyItemsPage: React.FC = () => {
@@ -32,6 +36,12 @@ export const CustodyItemsPage: React.FC = () => {
   // Search & Category Filter
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
+
+  // Bulk Selection
+  const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
+  const [bulkCategoryId, setBulkCategoryId] = useState<string>('');
+  const [isBulkCategorizing, setIsBulkCategorizing] = useState(false);
+  const [bulkStatusMsg, setBulkStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Modal: Direct Create Item (Supervisor / Dept Head)
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -53,10 +63,9 @@ export const CustodyItemsPage: React.FC = () => {
   const [proposeError, setProposeError] = useState('');
   const [isProposing, setIsProposing] = useState(false);
 
-  // Inline Category Creation Modal
-  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
+  // Category Management Modal (Supervisor only, no English prefix required!)
+  const [showCategoryManagementModal, setShowCategoryManagementModal] = useState(false);
   const [newCatName, setNewCatName] = useState('');
-  const [newCatPrefix, setNewCatPrefix] = useState('');
   const [catError, setCatError] = useState('');
   const [isAddingCat, setIsAddingCat] = useState(false);
 
@@ -107,7 +116,7 @@ export const CustodyItemsPage: React.FC = () => {
   // Handle Supervisor Direct Item Creation
   const handleCreateItemSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!createName.trim() || !createCategoryId || !createUnitId || !custodyId) return;
+    if (!createName.trim() || !createUnitId || !custodyId) return;
 
     setCreateError('');
     setIsCreating(true);
@@ -118,7 +127,7 @@ export const CustodyItemsPage: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: createName.trim(),
-          categoryId: Number(createCategoryId),
+          categoryId: createCategoryId ? Number(createCategoryId) : null,
           unitId: Number(createUnitId),
           minLimit: Number(createMinLimit) || 0,
           customCode: createCustomCode.trim() || undefined,
@@ -147,7 +156,7 @@ export const CustodyItemsPage: React.FC = () => {
   // Handle Storekeeper Item Proposal
   const handleProposeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!suggestedName.trim() || !suggestedCategoryId || !suggestedUnitId || !custodyId) return;
+    if (!suggestedName.trim() || !suggestedUnitId || !custodyId) return;
 
     setProposeError('');
     setIsProposing(true);
@@ -158,7 +167,7 @@ export const CustodyItemsPage: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           suggestedName: suggestedName.trim(),
-          suggestedCategoryId: Number(suggestedCategoryId),
+          suggestedCategoryId: suggestedCategoryId ? Number(suggestedCategoryId) : null,
           suggestedUnitId: Number(suggestedUnitId),
           minLimit: Number(minLimit) || 0,
           notes: notes.trim() || undefined,
@@ -185,10 +194,10 @@ export const CustodyItemsPage: React.FC = () => {
     }
   };
 
-  // Handle Inline Category Creation
+  // Handle Supervisor Category Creation (Arabic name only!)
   const handleAddCategorySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCatName.trim() || !newCatPrefix.trim()) return;
+    if (!newCatName.trim()) return;
 
     setCatError('');
     setIsAddingCat(true);
@@ -199,7 +208,6 @@ export const CustodyItemsPage: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: newCatName.trim(),
-          prefix: newCatPrefix.trim().toUpperCase(),
         }),
       });
 
@@ -210,21 +218,72 @@ export const CustodyItemsPage: React.FC = () => {
 
       const createdCat = data.category;
       setCategoriesList((prev) => [...prev, createdCat]);
+      setNewCatName('');
 
-      // Preselect in current active modal
       if (showCreateModal) {
         setCreateCategoryId(String(createdCat.id));
-      } else if (showProposeModal) {
-        setSuggestedCategoryId(String(createdCat.id));
       }
-
-      setShowAddCategoryModal(false);
-      setNewCatName('');
-      setNewCatPrefix('');
     } catch (err: any) {
       setCatError(err.message || 'حدث خطأ أثناء إضافة التصنيف');
     } finally {
       setIsAddingCat(false);
+    }
+  };
+
+  // Bulk Categorization Execution
+  const handleBulkCategorizeSubmit = async () => {
+    if (selectedItemIds.length === 0 || !bulkCategoryId) return;
+
+    setIsBulkCategorizing(true);
+    setBulkStatusMsg(null);
+
+    try {
+      const res = await fetch('/api/items/bulk-categorize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemIds: selectedItemIds,
+          categoryId: bulkCategoryId === 'none' ? null : Number(bulkCategoryId),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'فشل التحديث الجماعي للتصنيف');
+      }
+
+      setBulkStatusMsg({
+        type: 'success',
+        text: `تم تصنيف ${selectedItemIds.length} صنف بنجاح`,
+      });
+      setSelectedItemIds([]);
+      setBulkCategoryId('');
+      fetchCustodyItemsData();
+    } catch (err: any) {
+      setBulkStatusMsg({
+        type: 'error',
+        text: err.message || 'حدث خطأ أثناء تعيين التصنيف',
+      });
+    } finally {
+      setIsBulkCategorizing(false);
+    }
+  };
+
+  // Toggle item selection
+  const toggleSelectItem = (id: number) => {
+    setSelectedItemIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  // Toggle select all filtered items
+  const toggleSelectAll = () => {
+    const visibleIds = filteredItems.map((it) => it.item_id);
+    const allSelected = visibleIds.every((id) => selectedItemIds.includes(id));
+    if (allSelected) {
+      setSelectedItemIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    } else {
+      setSelectedItemIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
     }
   };
 
@@ -282,12 +341,20 @@ export const CustodyItemsPage: React.FC = () => {
     }
   };
 
+  const uncategorizedCount = linkedItems.filter((it) => !it.category_id).length;
+
   const filteredItems = linkedItems.filter((it) => {
     const matchesSearch =
       it.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       it.item_code.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory =
-      selectedCategoryFilter === 'all' || String(it.category_id) === selectedCategoryFilter;
+
+    let matchesCategory = true;
+    if (selectedCategoryFilter === 'uncategorized') {
+      matchesCategory = !it.category_id;
+    } else if (selectedCategoryFilter !== 'all') {
+      matchesCategory = String(it.category_id) === selectedCategoryFilter;
+    }
+
     return matchesSearch && matchesCategory;
   });
 
@@ -300,14 +367,32 @@ export const CustodyItemsPage: React.FC = () => {
         <div>
           <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Boxes className="w-5 h-5 text-indigo-600" />
-            <span>أصناف العهدة</span>
+            <span>أصناف العهدة وإدارة التصنيفات</span>
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            العهدة الحالية: <strong>{user?.custody_name || 'غير مسكنة'}</strong> • {isSupervisor ? 'صلاحية رئيس القسم (إنشاء أصناف واعتماد المقترحات)' : 'صلاحية أمين العهدة (اقتراح أصناف ومتابعة الأرصدة)'}
+            العهدة الحالية: <strong>{user?.custody_name || 'غير مسكنة'}</strong> •{' '}
+            {isSupervisor
+              ? 'صلاحية رئيس القسم (إنشاء وتصنيف الأصناف واعتماد المقترحات)'
+              : 'صلاحية أمين العهدة (اقتراح أصناف ومتابعة الأرصدة)'}
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Supervisor Only: Manage & Create Categories */}
+          {isSupervisor && (
+            <button
+              type="button"
+              onClick={() => {
+                setShowCategoryManagementModal(true);
+                setCatError('');
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 text-xs font-semibold border border-amber-200 dark:border-amber-800 transition-colors cursor-pointer"
+            >
+              <FolderPlus className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <span>إدارة وإنشاء التصنيفات</span>
+            </button>
+          )}
+
           {/* Button: Dept Head creates directly, Storekeeper proposes */}
           {isSupervisor ? (
             <button
@@ -334,32 +419,18 @@ export const CustodyItemsPage: React.FC = () => {
               <span>اقتراح صنف جديد للعهدة</span>
             </button>
           )}
-
-          {/* Inline Add Category Button */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowAddCategoryModal(true);
-              setCatError('');
-            }}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
-            title="إضافة تصنيف جديد دون مغادرة الصفحة"
-          >
-            <FolderPlus className="w-4 h-4 text-amber-500" />
-            <span>إضافة تصنيف</span>
-          </button>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-200 dark:border-slate-800 text-xs font-semibold gap-6">
+      <div className="flex border-b border-slate-200 dark:border-slate-800">
         <button
           type="button"
           onClick={() => setActiveTab('linked')}
-          className={`pb-3 flex items-center gap-1.5 cursor-pointer border-b-2 transition-all ${
+          className={`py-3 px-5 text-xs font-bold border-b-2 flex items-center gap-2 transition-colors cursor-pointer ${
             activeTab === 'linked'
-              ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 font-bold'
-              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+              ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
           <Boxes className="w-4 h-4" />
@@ -369,72 +440,185 @@ export const CustodyItemsPage: React.FC = () => {
         <button
           type="button"
           onClick={() => setActiveTab('proposals')}
-          className={`pb-3 flex items-center gap-1.5 cursor-pointer border-b-2 transition-all ${
+          className={`py-3 px-5 text-xs font-bold border-b-2 flex items-center gap-2 transition-colors cursor-pointer ${
             activeTab === 'proposals'
-              ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 font-bold'
-              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+              ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
           }`}
         >
           <Clock className="w-4 h-4" />
-          <span>مقترحات الأصناف ({proposals.length})</span>
+          <span>مقترحات الأصناف الجديدة</span>
           {pendingProposalsCount > 0 && (
-            <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px]">
-              {pendingProposalsCount} معلق
+            <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 font-mono">
+              {pendingProposalsCount}
             </span>
           )}
         </button>
       </div>
 
+      {/* Status Toast */}
+      {bulkStatusMsg && (
+        <div
+          className={`p-3 rounded-xl text-xs flex items-center justify-between animate-in fade-in ${
+            bulkStatusMsg.type === 'success'
+              ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+              : 'bg-rose-50 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+          }`}
+        >
+          <span>{bulkStatusMsg.text}</span>
+          <button
+            type="button"
+            onClick={() => setBulkStatusMsg(null)}
+            className="p-1 hover:opacity-75 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Tab 1: Linked Items */}
       {activeTab === 'linked' && (
         <div className="space-y-4">
-          {/* Search & Category Filter Bar */}
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
+          {/* Search & Filter Bar */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
               <input
                 type="text"
-                placeholder="بحث باسم الصنف أو الكود في العهدة..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-3 pr-10 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                placeholder="بحث بكود أو اسم الصنف..."
+                className="w-full pr-9 pl-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
               />
-              <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-2.5" />
             </div>
 
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-slate-400" />
-              <select
-                value={selectedCategoryFilter}
-                onChange={(e) => setSelectedCategoryFilter(e.target.value)}
-                className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-white"
+            {/* Category Filter Pills */}
+            <div className="flex items-center gap-1.5 flex-wrap text-xs">
+              <span className="text-slate-400 text-[11px] flex items-center gap-1">
+                <Filter className="w-3 h-3" />
+                <span>التصنيف:</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedCategoryFilter('all')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                  selectedCategoryFilter === 'all'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                }`}
               >
-                <option value="all">جميع التصنيفات ({categoriesList.length})</option>
-                {categoriesList.map((c) => (
-                  <option key={c.id} value={String(c.id)}>
-                    {c.name} ({c.prefix})
-                  </option>
-                ))}
-              </select>
+                الكل ({linkedItems.length})
+              </button>
+
+              {/* Uncategorized filter pill */}
+              <button
+                type="button"
+                onClick={() => setSelectedCategoryFilter('uncategorized')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1 ${
+                  selectedCategoryFilter === 'uncategorized'
+                    ? 'bg-amber-600 text-white'
+                    : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                }`}
+              >
+                <span>بدون تصنيف</span>
+                <span className="font-mono">({uncategorizedCount})</span>
+              </button>
+
+              {categoriesList.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setSelectedCategoryFilter(String(c.id))}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                    selectedCategoryFilter === String(c.id)
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  {c.name}
+                </button>
+              ))}
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs">
+          {/* Supervisor Bulk Action Bar (When items are selected) */}
+          {isSupervisor && selectedItemIds.length > 0 && (
+            <div className="p-4 rounded-2xl bg-indigo-900 text-white shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in slide-in-from-bottom-2">
+              <div className="flex items-center gap-2">
+                <CheckSquare className="w-4 h-4 text-indigo-300" />
+                <span className="text-xs font-bold">
+                  تم تحديد ({selectedItemIds.length}) صنف للإجراء الجماعي
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <select
+                  value={bulkCategoryId}
+                  onChange={(e) => setBulkCategoryId(e.target.value)}
+                  className="px-3 py-1.5 rounded-xl bg-indigo-950 text-white border border-indigo-700 text-xs"
+                >
+                  <option value="">-- اختر التصنيف المراد تعيينه --</option>
+                  <option value="none">بدون تصنيف (إلغاء التصنيف)</option>
+                  {categoriesList.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.prefix})
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={handleBulkCategorizeSubmit}
+                  disabled={!bulkCategoryId || isBulkCategorizing}
+                  className="px-4 py-1.5 rounded-xl bg-white text-indigo-900 hover:bg-indigo-50 font-bold text-xs shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {isBulkCategorizing ? 'جارٍ الحفظ...' : 'تطبيق التصنيف للأصناف المحددة'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedItemIds([])}
+                  className="px-3 py-1.5 rounded-xl text-indigo-200 hover:text-white hover:bg-white/10 text-xs cursor-pointer"
+                >
+                  إلغاء التحديد
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Items Table */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
             {filteredItems.length === 0 ? (
-              <div className="p-8 text-center text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
-                <Boxes className="w-8 h-8 mx-auto opacity-50" />
-                <p className="text-xs">
-                  {linkedItems.length === 0
-                    ? isSupervisor
-                      ? 'لم يتم إضافة أو إسناد أي أصناف لهذه العهدة بعد. يمكنك الضغط على «إنشاء صنف جديد للعهدة» بالأعلى لإضافة أول صنف فوراً.'
-                      : 'لم يتم إسناد أي أصناف لهذه العهدة بعد. يمكنك رفع مقترح صنف جديد لرئيس القسم.'
-                    : 'لا توجد نتائج بحث مطابقة.'}
+              <div className="p-12 text-center text-slate-400 space-y-2">
+                <Boxes className="w-10 h-10 mx-auto opacity-40 text-slate-400" />
+                <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  لا توجد أصناف مطابقة للبحث أو الفلتر
+                </h4>
+                <p className="text-[11px]">
+                  {selectedCategoryFilter === 'uncategorized'
+                    ? 'ممتاز! لا توجد أصناف بدون تصنيف حالياً.'
+                    : 'يمكنك إنشاء أصناف جديدة أو إسنادها للعهدة.'}
                 </p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-right text-xs">
-                  <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 border-y border-slate-200 dark:border-slate-800">
+                  <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
                     <tr>
+                      {isSupervisor && (
+                        <th className="py-2.5 px-3 w-10 text-center">
+                          <input
+                            type="checkbox"
+                            checked={
+                              filteredItems.length > 0 &&
+                              filteredItems.every((it) => selectedItemIds.includes(it.item_id))
+                            }
+                            onChange={toggleSelectAll}
+                            className="rounded border-slate-300 text-indigo-600 cursor-pointer"
+                            title="تحديد الكل"
+                          />
+                        </th>
+                      )}
                       <th className="py-2.5 px-3">كود الصنف</th>
                       <th className="py-2.5 px-3">اسم الصنف</th>
                       <th className="py-2.5 px-3">التصنيف</th>
@@ -445,33 +629,57 @@ export const CustodyItemsPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {filteredItems.map((it) => (
-                      <tr key={it.item_id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                        <td className="py-2.5 px-3 font-mono font-bold text-indigo-600 dark:text-indigo-400">
-                          {it.item_code}
-                        </td>
-                        <td className="py-2.5 px-3 font-semibold text-slate-900 dark:text-white">
-                          {it.name}
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-500">
-                          <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[11px]">
-                            {it.category_name}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-500">
-                          {it.unit_name} ({it.unit_symbol})
-                        </td>
-                        <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-800 dark:text-slate-200">
-                          {it.quantity}
-                        </td>
-                        <td className="py-2.5 px-3 text-center font-mono font-bold text-amber-600 dark:text-amber-400">
-                          {it.reserved_qty}
-                        </td>
-                        <td className="py-2.5 px-3 text-center font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                          {it.available_qty}
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredItems.map((it) => {
+                      const isSelected = selectedItemIds.includes(it.item_id);
+                      return (
+                        <tr
+                          key={it.item_id}
+                          className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors ${
+                            isSelected ? 'bg-indigo-50/60 dark:bg-indigo-950/30' : ''
+                          }`}
+                        >
+                          {isSupervisor && (
+                            <td className="py-2.5 px-3 text-center">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleSelectItem(it.item_id)}
+                                className="rounded border-slate-300 text-indigo-600 cursor-pointer"
+                              />
+                            </td>
+                          )}
+                          <td className="py-2.5 px-3 font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                            {it.item_code}
+                          </td>
+                          <td className="py-2.5 px-3 font-semibold text-slate-900 dark:text-white">
+                            {it.name}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            {it.category_name === 'بدون تصنيف' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300">
+                                بدون تصنيف
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[11px] text-slate-700 dark:text-slate-300 font-medium">
+                                {it.category_name}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-500">
+                            {it.unit_name} ({it.unit_symbol})
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-800 dark:text-slate-200">
+                            {it.quantity}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono font-bold text-amber-600 dark:text-amber-400">
+                            {it.reserved_qty}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                            {it.available_qty}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -508,7 +716,7 @@ export const CustodyItemsPage: React.FC = () => {
                       <td className="py-2.5 px-3 font-semibold text-slate-900 dark:text-white">
                         {p.suggested_name}
                       </td>
-                      <td className="py-2.5 px-3 text-slate-500">{p.category_name}</td>
+                      <td className="py-2.5 px-3 text-slate-500">{p.category_name || 'بدون تصنيف'}</td>
                       <td className="py-2.5 px-3 text-slate-500">{p.unit_name}</td>
                       <td className="py-2.5 px-3 font-mono">{p.min_limit}</td>
                       <td className="py-2.5 px-3 text-slate-500 text-[11px]">{p.notes || '—'}</td>
@@ -526,13 +734,9 @@ export const CustodyItemsPage: React.FC = () => {
                             ? 'معتمد'
                             : p.status === 'rejected'
                             ? 'مرفوض'
-                            : 'قيد المراجعة'}
+                            : 'بانتظار الاعتماد'}
                         </span>
-                        {p.rejection_reason && (
-                          <p className="text-[10px] text-rose-500 mt-0.5">سبب الرفض: {p.rejection_reason}</p>
-                        )}
                       </td>
-
                       {isSupervisor && (
                         <td className="py-2.5 px-3 text-center">
                           {p.status === 'pending' ? (
@@ -540,9 +744,9 @@ export const CustodyItemsPage: React.FC = () => {
                               <button
                                 type="button"
                                 onClick={() => handleApproveProposal(p.id)}
-                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold cursor-pointer transition-colors"
+                                className="px-2.5 py-1 rounded bg-emerald-600 text-white font-semibold hover:bg-emerald-700 cursor-pointer text-[10px]"
                               >
-                                اعتماد
+                                اعتماد وإسناد
                               </button>
                               <button
                                 type="button"
@@ -551,13 +755,13 @@ export const CustodyItemsPage: React.FC = () => {
                                   setRejectReason('');
                                   setRejectError('');
                                 }}
-                                className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 text-[11px] font-semibold cursor-pointer transition-colors"
+                                className="px-2.5 py-1 rounded bg-rose-50 text-rose-600 hover:bg-rose-100 cursor-pointer text-[10px]"
                               >
                                 رفض
                               </button>
                             </div>
                           ) : (
-                            <span className="text-slate-400 text-[10px]">مكتمل</span>
+                            <span className="text-[10px] text-slate-400">مكتمل</span>
                           )}
                         </td>
                       )}
@@ -570,20 +774,99 @@ export const CustodyItemsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Modal: Direct Create Item (Supervisor / Head of Dept) */}
+      {/* Modal: Category Management (Supervisor only, no English prefix required!) */}
+      {showCategoryManagementModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <FolderPlus className="w-5 h-5 text-amber-600" />
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  إدارة وإنشاء التصنيفات (خاص برئيس القسم)
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCategoryManagementModal(false)}
+                className="p-1 rounded text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Create Category Form */}
+            <form onSubmit={handleAddCategorySubmit} className="space-y-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700">
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                + إنشاء تصنيف جديد:
+              </span>
+
+              {catError && (
+                <div className="p-2 rounded bg-rose-50 text-rose-700 text-xs">
+                  {catError}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  required
+                  placeholder="اسم التصنيف بالعربية (مثال: أخشاب، دهانات، مسامير)..."
+                  value={newCatName}
+                  onChange={(e) => setNewCatName(e.target.value)}
+                  className="flex-1 px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs"
+                />
+                <button
+                  type="submit"
+                  disabled={isAddingCat}
+                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition-colors cursor-pointer"
+                >
+                  {isAddingCat ? '...' : 'إضافة'}
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-400 leading-snug">
+                * يقوم النظام بتوليد بادئة الكود الإنجليزية تلقائياً بنمط تسلسلي، دون الحاجة لإدخالها يدوياً.
+              </p>
+            </form>
+
+            {/* Existing Categories List */}
+            <div className="space-y-2">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                التصنيفات الحالية في النظام ({categoriesList.length}):
+              </span>
+              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                {categoriesList.length === 0 ? (
+                  <p className="text-xs text-slate-400 py-2 text-center">لا توجد تصنيفات معرفة بعد.</p>
+                ) : (
+                  categoriesList.map((c) => (
+                    <div
+                      key={c.id}
+                      className="flex items-center justify-between p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs"
+                    >
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        {c.name}
+                      </span>
+                      <span className="font-mono text-[10px] text-slate-400 bg-white dark:bg-slate-700 px-2 py-0.5 rounded">
+                        الكود: {c.prefix}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Direct Create Item (Supervisor) */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 max-w-md w-full p-6 space-y-4">
             <div className="flex items-center gap-2 pb-3 border-b border-slate-100 dark:border-slate-800">
               <PlusCircle className="w-5 h-5 text-indigo-600" />
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                إنشاء صنف جديد للعهدة
+                إنشاء صنف جديد وإسناده للعهدة مباشرة
               </h3>
             </div>
-
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              سيتم إنشاء الصنف وإدراجه مباشرة في عهدة <strong>{user?.custody_name}</strong> وسيظهر فوراً لأمين العهدة.
-            </p>
 
             {createError && (
               <div className="p-2.5 rounded-lg bg-rose-50 text-rose-700 text-xs">
@@ -594,43 +877,42 @@ export const CustodyItemsPage: React.FC = () => {
             <form onSubmit={handleCreateItemSubmit} className="space-y-3 text-xs">
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  اسم الصنف *
+                  اسم الصنف بالعربية *
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="مثال: مسامير صلب 5 سم"
+                  placeholder="مثال: خشب موسكي 2 بوصة، كابل نحاسي 4 ملم"
                   value={createName}
                   onChange={(e) => setCreateName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
                   autoFocus
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <div className="flex justify-between items-center mb-1">
+                  <div className="flex items-center justify-between mb-1">
                     <label className="font-semibold text-slate-700 dark:text-slate-300">
-                      التصنيف *
+                      التصنيف (اختياري)
                     </label>
                     <button
                       type="button"
-                      onClick={() => setShowAddCategoryModal(true)}
-                      className="text-[10px] text-indigo-600 hover:underline cursor-pointer"
+                      onClick={() => setShowCategoryManagementModal(true)}
+                      className="text-[10px] text-amber-600 hover:underline cursor-pointer"
                     >
-                      + تصنيف جديد
+                      + إدارة
                     </button>
                   </div>
                   <select
-                    required
                     value={createCategoryId}
                     onChange={(e) => setCreateCategoryId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
                   >
-                    <option value="">اختر التصنيف</option>
+                    <option value="">بدون تصنيف (يمكن تصنيفه لاحقاً)</option>
                     {categoriesList.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.name} ({c.prefix})
+                        {c.name}
                       </option>
                     ))}
                   </select>
@@ -644,7 +926,7 @@ export const CustodyItemsPage: React.FC = () => {
                     required
                     value={createUnitId}
                     onChange={(e) => setCreateUnitId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
                   >
                     <option value="">اختر الوحدة</option>
                     {unitsList.map((u) => (
@@ -656,33 +938,18 @@ export const CustodyItemsPage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    حد الأمان (الحد الأدنى)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    value={createMinLimit}
-                    onChange={(e) => setCreateMinLimit(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-left dir-ltr"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    كود مخصص (اختياري)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="تلقائي بنمط [PREFIX]-0001"
-                    value={createCustomCode}
-                    onChange={(e) => setCreateCustomCode(e.target.value.toUpperCase())}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-left dir-ltr"
-                  />
-                </div>
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  الحد الأدنى للأمان (Reorder Limit)
+                </label>
+                <input
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  value={createMinLimit}
+                  onChange={(e) => setCreateMinLimit(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                />
               </div>
 
               <div className="pt-2 flex gap-2">
@@ -691,7 +958,7 @@ export const CustodyItemsPage: React.FC = () => {
                   disabled={isCreating}
                   className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition-colors cursor-pointer"
                 >
-                  {isCreating ? 'جارٍ الإنشاء...' : 'إنشاء وإدراج بالعهدة'}
+                  {isCreating ? 'جارٍ الإنشاء...' : 'إنشاء وإسناد للعهدة'}
                 </button>
                 <button
                   type="button"
@@ -731,38 +998,28 @@ export const CustodyItemsPage: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="مثال: غراء خشب مقاوم للرطوبة 5كجم"
+                  placeholder="اسم الصنف التوصيفي..."
                   value={suggestedName}
                   onChange={(e) => setSuggestedName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
                   autoFocus
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="font-semibold text-slate-700 dark:text-slate-300">
-                      التصنيف *
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setShowAddCategoryModal(true)}
-                      className="text-[10px] text-indigo-600 hover:underline cursor-pointer"
-                    >
-                      + تصنيف جديد
-                    </button>
-                  </div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    التصنيف (اختياري)
+                  </label>
                   <select
-                    required
                     value={suggestedCategoryId}
                     onChange={(e) => setSuggestedCategoryId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
                   >
-                    <option value="">اختر التصنيف</option>
+                    <option value="">بدون تصنيف</option>
                     {categoriesList.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.name} ({c.prefix})
+                        {c.name}
                       </option>
                     ))}
                   </select>
@@ -776,7 +1033,7 @@ export const CustodyItemsPage: React.FC = () => {
                     required
                     value={suggestedUnitId}
                     onChange={(e) => setSuggestedUnitId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
                   >
                     <option value="">اختر الوحدة</option>
                     {unitsList.map((u) => (
@@ -798,20 +1055,20 @@ export const CustodyItemsPage: React.FC = () => {
                   min="0"
                   value={minLimit}
                   onChange={(e) => setMinLimit(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
                 />
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  مبررات وملاحظات الاقتراح
+                  ملاحظات الاقتراح
                 </label>
                 <textarea
                   rows={2}
-                  placeholder="سبب طلب إدراج هذا الصنف بالعهدة..."
+                  placeholder="سبب طلب إضافة هذا الصنف..."
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
                 />
               </div>
 
@@ -836,88 +1093,16 @@ export const CustodyItemsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Modal: Inline Add Category */}
-      {showAddCategoryModal && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 max-w-sm w-full p-5 space-y-4">
-            <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
-              <FolderPlus className="w-5 h-5 text-amber-500" />
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                إضافة تصنيف أصناف جديد
-              </h3>
-            </div>
-
-            {catError && (
-              <div className="p-2 rounded-lg bg-rose-50 text-rose-700 text-xs">
-                {catError}
-              </div>
-            )}
-
-            <form onSubmit={handleAddCategorySubmit} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  اسم التصنيف *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="مثال: أخشاب، دهانات، أدوات"
-                  value={newCatName}
-                  onChange={(e) => setNewCatName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                  autoFocus
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  بادئة الكود الإنجليزية (Prefix) *
-                </label>
-                <input
-                  type="text"
-                  required
-                  maxLength={5}
-                  placeholder="مثال: WOD أو PNT"
-                  value={newCatPrefix}
-                  onChange={(e) => setNewCatPrefix(e.target.value.toUpperCase())}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-left dir-ltr"
-                />
-              </div>
-
-              <div className="pt-2 flex gap-2">
-                <button
-                  type="submit"
-                  disabled={isAddingCat}
-                  className="flex-1 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold transition-colors cursor-pointer"
-                >
-                  {isAddingCat ? 'جارٍ الحفظ...' : 'حفظ التصنيف'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAddCategoryModal(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold hover:bg-slate-200 transition-colors cursor-pointer"
-                >
-                  إلغاء
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Reject Proposal (Supervisor) */}
+      {/* Reject Proposal Modal */}
       {rejectTargetId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 max-w-sm w-full p-6 space-y-4">
-            <div className="flex items-center gap-2 pb-3 border-b border-slate-100 dark:border-slate-800">
-              <XCircle className="w-5 h-5 text-rose-600" />
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                رفض مقترح الصنف
-              </h3>
-            </div>
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 max-w-sm w-full p-5 space-y-4">
+            <h3 className="text-sm font-bold text-rose-600">
+              رفض مقترح الصنف
+            </h3>
 
             {rejectError && (
-              <div className="p-2.5 rounded-lg bg-rose-50 text-rose-700 text-xs">
+              <div className="p-2 rounded bg-rose-50 text-rose-700 text-xs">
                 {rejectError}
               </div>
             )}
@@ -925,33 +1110,32 @@ export const CustodyItemsPage: React.FC = () => {
             <form onSubmit={handleRejectProposalSubmit} className="space-y-3 text-xs">
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  سبب الرفض الإلزامي *
+                  سبب الرفض:
                 </label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   required
-                  placeholder="يرجى كتابة سبب عدم اعتماد هذا الصنف..."
                   value={rejectReason}
                   onChange={(e) => setRejectReason(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                  autoFocus
+                  placeholder="بيان سبب عدم اعتماد الصنف..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
                 />
               </div>
 
-              <div className="pt-2 flex gap-2">
-                <button
-                  type="submit"
-                  disabled={isRejecting}
-                  className="flex-1 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold transition-colors cursor-pointer"
-                >
-                  {isRejecting ? 'جارٍ الحفظ...' : 'تأكيد الرفض'}
-                </button>
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setRejectTargetId(null)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold hover:bg-slate-200 transition-colors cursor-pointer"
+                  className="px-3 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 cursor-pointer"
                 >
                   إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isRejecting}
+                  className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold cursor-pointer"
+                >
+                  {isRejecting ? 'جارٍ الرفض...' : 'تأكيد الرفض'}
                 </button>
               </div>
             </form>

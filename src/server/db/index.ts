@@ -29,8 +29,29 @@ export function initDbSchema() {
     if (custodyCols && custodyCols.length > 0 && !custodyCols.some((c: any) => c.name === 'is_initial_import_locked')) {
       sqlite.exec('ALTER TABLE custodies ADD COLUMN is_initial_import_locked INTEGER NOT NULL DEFAULT 0;');
     }
+
+    const itemCols = sqlite.pragma('table_info(items)') as any[];
+    if (itemCols && itemCols.length > 0) {
+      const catCol = itemCols.find((c: any) => c.name === 'category_id');
+      if (catCol && catCol.notnull === 1) {
+        sqlite.exec(`
+          CREATE TABLE items_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_code TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            category_id INTEGER REFERENCES categories(id),
+            unit_id INTEGER NOT NULL REFERENCES units(id),
+            min_limit_milli INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+          );
+          INSERT INTO items_new SELECT * FROM items;
+          DROP TABLE items;
+          ALTER TABLE items_new RENAME TO items;
+        `);
+      }
+    }
   } catch (e) {
-    // Table may not exist yet
+    // Tables may not exist yet
   }
 
   sqlite.exec(`
@@ -92,7 +113,7 @@ export function initDbSchema() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       item_code TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
-      category_id INTEGER NOT NULL REFERENCES categories(id),
+      category_id INTEGER REFERENCES categories(id),
       unit_id INTEGER NOT NULL REFERENCES units(id),
       min_limit_milli INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
@@ -191,5 +212,50 @@ export function initDbSchema() {
       ip_address TEXT,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS fiscal_closings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fiscal_year INTEGER NOT NULL UNIQUE,
+      closed_at TEXT NOT NULL,
+      closed_by INTEGER NOT NULL REFERENCES users(id),
+      total_items_count INTEGER NOT NULL,
+      total_quantity_milli INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'closed',
+      notes TEXT,
+      snapshot_json TEXT NOT NULL
+    );
   `);
+
+  // Pre-seed standard measurement units so the user never has to define them manually
+  const standardUnits = [
+    { name: 'قطعة', symbol: 'ق' },
+    { name: 'كرتونة', symbol: 'كرتونة' },
+    { name: 'كيلو جرام', symbol: 'كجم' },
+    { name: 'جرام', symbol: 'جم' },
+    { name: 'طن', symbol: 'طن' },
+    { name: 'متر', symbol: 'م' },
+    { name: 'متر مربع', symbol: 'م²' },
+    { name: 'متر مكعب', symbol: 'م³' },
+    { name: 'لتر', symbol: 'لتر' },
+    { name: 'ملليلتر', symbol: 'مل' },
+    { name: 'علبة', symbol: 'علبة' },
+    { name: 'لفة / رول', symbol: 'لفة' },
+    { name: 'برميل', symbol: 'برميل' },
+    { name: 'شيكارة / كيس', symbol: 'شيكارة' },
+    { name: 'لوح', symbol: 'لوح' },
+    { name: 'دستة', symbol: 'دستة' },
+    { name: 'زوج', symbol: 'زوج' },
+    { name: 'حزمة', symbol: 'حزمة' },
+    { name: 'طقم', symbol: 'طقم' },
+    { name: 'عبوة', symbol: 'عبوة' },
+  ];
+
+  try {
+    const insertUnit = sqlite.prepare('INSERT OR IGNORE INTO units (name, symbol) VALUES (?, ?)');
+    for (const u of standardUnits) {
+      insertUnit.run(u.name, u.symbol);
+    }
+  } catch (err) {
+    console.error('Error seeding standard units:', err);
+  }
 }

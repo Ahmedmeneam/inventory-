@@ -11,6 +11,9 @@ import { custodyRouter } from './src/server/routes/custody.ts';
 import { itemsRouter } from './src/server/routes/items.ts';
 import { importRouter } from './src/server/routes/import.ts';
 import { movementsRouter } from './src/server/routes/movements.ts';
+import { ledgerRouter } from './src/server/routes/ledger.ts';
+import { inventoryRouter } from './src/server/routes/inventory.ts';
+import { backupRouter } from './src/server/routes/backup.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,8 +26,8 @@ async function startServer() {
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
   const isProd = process.env.NODE_ENV === 'production';
 
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // API Routes
   app.use('/api/setup', setupRouter);
@@ -35,6 +38,10 @@ async function startServer() {
   app.use('/api/custodies', importRouter);
   app.use('/api/custodies', movementsRouter);
   app.use('/api/movements', movementsRouter);
+  app.use('/api/movements', ledgerRouter);
+  app.use('/api/ledger', ledgerRouter);
+  app.use('/api/inventory', inventoryRouter);
+  app.use('/api/backup', backupRouter);
   app.use('/api', itemsRouter);
 
   // Health check endpoint

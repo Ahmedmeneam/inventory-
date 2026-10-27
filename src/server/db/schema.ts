@@ -58,7 +58,7 @@ export const items = sqliteTable('items', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   itemCode: text('item_code').notNull().unique(),
   name: text('name').notNull(),
-  categoryId: integer('category_id').notNull().references(() => categories.id),
+  categoryId: integer('category_id').references(() => categories.id),
   unitId: integer('unit_id').notNull().references(() => units.id),
   minLimitMilli: integer('min_limit_milli').notNull().default(0),
   createdAt: text('created_at').notNull(),
@@ -100,7 +100,7 @@ export const movements = sqliteTable('movements', {
     enum: ['addition', 'issue', 'internal_transfer', 'disposal', 'adjustment', 'reversal']
   }).notNull(),
   status: text('status', {
-    enum: ['pending_approval', 'executed_delegated', 'executed', 'rejected', 'cancelled', 'reversed']
+    enum: ['pending_approval', 'executed_delegated', 'executed', 'approved', 'rejected', 'cancelled', 'reversed']
   }).notNull(),
   sourceWarehouseId: integer('source_warehouse_id').references(() => warehouses.id),
   targetWarehouseId: integer('target_warehouse_id').references(() => warehouses.id),
@@ -163,3 +163,16 @@ export const auditLogs = sqliteTable('audit_logs', {
   ipAddress: text('ip_address'),
   createdAt: text('created_at').notNull(),
 });
+
+export const fiscalClosings = sqliteTable('fiscal_closings', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  fiscalYear: integer('fiscal_year').notNull().unique(),
+  closedAt: text('closed_at').notNull(),
+  closedBy: integer('closed_by').notNull().references(() => users.id),
+  totalItemsCount: integer('total_items_count').notNull(),
+  totalQuantityMilli: integer('total_quantity_milli').notNull(),
+  status: text('status', { enum: ['closed', 'frozen'] }).notNull().default('closed'),
+  notes: text('notes'),
+  snapshotJson: text('snapshot_json').notNull(),
+});
+

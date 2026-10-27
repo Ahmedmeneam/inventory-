@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { db } from '../db/index.ts';
 import { users, custodies, auditLogs } from '../db/schema.ts';
@@ -258,4 +258,139 @@ usersRouter.put('/:id/profile', async (req: Request, res: Response) => {
     res.status(500).json({ error: 'فشل تحديث بيانات الملف الشخصي' });
   }
 });
+
+// DELETE /api/users/:id - Delete account with strict last-admin protection
+usersRouter.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const userId = Number(req.params.id);
+    const { adminPassword, adminUserId } = req.body;
+
+    // Verify Admin Password
+    const adminQuery = adminUserId ? eq(users.id, Number(adminUserId)) : eq(users.role, 'admin');
+    const admin = db.select().from(users).where(adminQuery).get();
+
+    if (!admin || !admin.passwordHash || !bcrypt.compareSync(adminPassword || '', admin.passwordHash)) {
+      res.status(403).json({ error: 'تأكيد كلمة مرور مسؤول النظام غير صحيح' });
+      return;
+    }
+
+    const targetUser = db.select().from(users).where(eq(users.id, userId)).get();
+    if (!targetUser) {
+      res.status(404).json({ error: 'المستخدم المراد حذفه غير موجود' });
+      return;
+    }
+
+    // STRICT CHECK: Guard against deleting the last active admin account
+    if (targetUser.role === 'admin') {
+      const activeAdmins = db
+        .select()
+        .from(users)
+        .where(and(eq(users.role, 'admin'), eq(users.status, 'active')))
+        .all();
+
+      if (activeAdmins.length <= 1) {
+        res.status(400).json({
+          error: 'حظر أمني إلزامي: يُحظر تماماً حذف أو تعطيل آخر حساب مسؤول نظام نشط (Admin) للحفاظ على تشغيل النظام.',
+        });
+        return;
+      }
+    }
+
+    // Delete user
+    db.delete(users).where(eq(users.id, userId)).run();
+
+    // Audit log
+    db.insert(auditLogs).values({
+      userId: admin.id,
+      userCode: admin.userCode,
+      action: 'USER_DELETED',
+      details: JSON.stringify({
+        deletedUserCode: targetUser.userCode,
+        fullName: targetUser.fullName,
+        role: targetUser.role,
+      }),
+      ipAddress: req.ip || '127.0.0.1',
+      createdAt: new Date().toISOString(),
+    }).run();
+
+    res.json({
+      success: true,
+      message: `تم حذف حساب المستخدم ${targetUser.userCode} بنجاح`,
+    });
+  } catch (error: any) {
+    console.error('Delete user error:', error);
+    res.status(500).json({ error: error.message || 'فشل حذف حساب المستخدم' });
+  }
+});
+
+// PUT /api/users/:id/status - Toggle user status with last-admin guard
+usersRouter.put('/:id/status', async (req: Request, res: Response) => {
+  try {
+    const userId = Number(req.params.id);
+    const { status, adminPassword, adminUserId } = req.body;
+
+    if (!['active', 'suspended'].includes(status)) {
+      res.status(400).json({ error: 'حالة الحساب غير صالحة' });
+      return;
+    }
+
+    // Verify Admin Password
+    const adminQuery = adminUserId ? eq(users.id, Number(adminUserId)) : eq(users.role, 'admin');
+    const admin = db.select().from(users).where(adminQuery).get();
+
+    if (!admin || !admin.passwordHash || !bcrypt.compareSync(adminPassword || '', admin.passwordHash)) {
+      res.status(403).json({ error: 'تأكيد كلمة مرور مسؤول النظام غير صحيح' });
+      return;
+    }
+
+    const targetUser = db.select().from(users).where(eq(users.id, userId)).get();
+    if (!targetUser) {
+      res.status(404).json({ error: 'المستخدم غير موجود' });
+      return;
+    }
+
+    // STRICT CHECK: Guard against suspending the last active admin
+    if (targetUser.role === 'admin' && status === 'suspended') {
+      const activeAdmins = db
+        .select()
+        .from(users)
+        .where(and(eq(users.role, 'admin'), eq(users.status, 'active')))
+        .all();
+
+      if (activeAdmins.length <= 1) {
+        res.status(400).json({
+          error: 'حظر أمني إلزامي: يُحظر إيقاف آخر حساب مسؤول نظام نشط (Admin) حفاظاً على سلامة إدارة النظام.',
+        });
+        return;
+      }
+    }
+
+    db.update(users)
+      .set({ status })
+      .where(eq(users.id, userId))
+      .run();
+
+    // Audit log
+    db.insert(auditLogs).values({
+      userId: admin.id,
+      userCode: admin.userCode,
+      action: 'USER_STATUS_CHANGED',
+      details: JSON.stringify({
+        targetUserCode: targetUser.userCode,
+        newStatus: status,
+      }),
+      ipAddress: req.ip || '127.0.0.1',
+      createdAt: new Date().toISOString(),
+    }).run();
+
+    res.json({
+      success: true,
+      message: `تم تغيير حالة المستخدم إلى: ${status === 'active' ? 'نشط' : 'موقوف'}`,
+    });
+  } catch (error: any) {
+    console.error('Update status error:', error);
+    res.status(500).json({ error: error.message || 'فشل تحديث حالة المستخدم' });
+  }
+});
+
 
