@@ -1,0 +1,6 @@
+{
+  "name": "نظام إدارة العهد والمخازن",
+  "description": "نظام مؤسسي متكامل لإدارة العهد والمخازن والأصناف والتفويض اللحظي والجرد الدوري بدون بيانات افتراضية.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
