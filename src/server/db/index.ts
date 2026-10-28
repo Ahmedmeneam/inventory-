@@ -30,6 +30,22 @@ export function initDbSchema() {
       sqlite.exec('ALTER TABLE custodies ADD COLUMN is_initial_import_locked INTEGER NOT NULL DEFAULT 0;');
     }
 
+    const movCols = sqlite.pragma('table_info(movements)') as any[];
+    if (movCols && movCols.length > 0) {
+      if (!movCols.some((c: any) => c.name === 'receiver_name')) {
+        sqlite.exec('ALTER TABLE movements ADD COLUMN receiver_name TEXT;');
+      }
+      if (!movCols.some((c: any) => c.name === 'receiver_phone')) {
+        sqlite.exec('ALTER TABLE movements ADD COLUMN receiver_phone TEXT;');
+      }
+      if (!movCols.some((c: any) => c.name === 'doc_ref')) {
+        sqlite.exec('ALTER TABLE movements ADD COLUMN doc_ref TEXT;');
+      }
+      if (!movCols.some((c: any) => c.name === 'department')) {
+        sqlite.exec('ALTER TABLE movements ADD COLUMN department TEXT;');
+      }
+    }
+
     const itemCols = sqlite.pragma('table_info(items)') as any[];
     if (itemCols && itemCols.length > 0) {
       const catCol = itemCols.find((c: any) => c.name === 'category_id');
@@ -156,6 +172,10 @@ export function initDbSchema() {
       item_id INTEGER NOT NULL REFERENCES items(id),
       quantity_milli INTEGER NOT NULL,
       notes TEXT,
+      receiver_name TEXT,
+      receiver_phone TEXT,
+      doc_ref TEXT,
+      department TEXT,
       created_by INTEGER NOT NULL REFERENCES users(id),
       created_at TEXT NOT NULL,
       approved_by INTEGER REFERENCES users(id),
@@ -195,6 +215,10 @@ export function initDbSchema() {
       suggested_unit_id INTEGER NOT NULL REFERENCES units(id),
       min_limit_milli INTEGER NOT NULL DEFAULT 0,
       notes TEXT,
+      receiver_name TEXT,
+      receiver_phone TEXT,
+      doc_ref TEXT,
+      department TEXT,
       status TEXT NOT NULL DEFAULT 'pending',
       rejection_reason TEXT,
       created_by INTEGER NOT NULL REFERENCES users(id),
@@ -222,6 +246,10 @@ export function initDbSchema() {
       total_quantity_milli INTEGER NOT NULL,
       status TEXT NOT NULL DEFAULT 'closed',
       notes TEXT,
+      receiver_name TEXT,
+      receiver_phone TEXT,
+      doc_ref TEXT,
+      department TEXT,
       snapshot_json TEXT NOT NULL
     );
 
