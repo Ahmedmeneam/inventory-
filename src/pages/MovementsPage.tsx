@@ -1,45 +1,60 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
-import { Movement, Warehouse, Item } from '../types/index.ts';
 import {
   ArrowRightLeft,
-  PlusCircle,
-  MinusCircle,
-  Repeat,
-  Trash2,
-  ShieldCheck,
-  AlertTriangle,
-  Clock,
-  CheckCircle2,
-  Info,
   Warehouse as WarehouseIcon,
   Search,
+  CheckCircle2,
+  AlertTriangle,
+  Clock,
+  Info,
+  Calendar,
+  FileText,
+  User,
+  Building,
+  RotateCcw,
+  Sparkles,
+  Layers,
 } from 'lucide-react';
 
 export const MovementsPage: React.FC = () => {
   const { user } = useAuth();
-  const custodyId = user?.custody_id;
+  const isAdmin = user?.role === 'admin';
+  const isStorekeeper = user?.role === 'storekeeper';
 
   const [activeTab, setActiveTab] = useState<'create' | 'history'>('create');
-  const [movementMode, setMovementMode] = useState<'addition' | 'issue' | 'transfer' | 'disposal'>('addition');
 
   // Master Data
-  const [custodyWarehouses, setCustodyWarehouses] = useState<any[]>([]);
-  const [custodyItems, setCustodyItems] = useState<any[]>([]);
+  const [custodiesList, setCustodiesList] = useState<any[]>([]);
+  const [selectedCustodyId, setSelectedCustodyId] = useState<string>(
+    user?.custody_id ? String(user?.custody_id) : ''
+  );
+  const [allWarehouses, setAllWarehouses] = useState<any[]>([]);
+  const [itemsList, setItemsList] = useState<any[]>([]);
   const [movementsList, setMovementsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Form Fields
+  // Form Fields (Requested by user)
   const [selectedItemId, setSelectedItemId] = useState<string>('');
+  const [itemCodeInput, setItemCodeInput] = useState<string>('');
   const [sourceWarehouseId, setSourceWarehouseId] = useState<string>('');
   const [targetWarehouseId, setTargetWarehouseId] = useState<string>('');
   const [quantity, setQuantity] = useState<string>('');
+
+  // Optional Fields (أماكن لباقي البيانات اختياري المستخدم يملاها أو يسيبها فاضية)
+  const [docRef, setDocRef] = useState<string>('');
+  const [partyName, setPartyName] = useState<string>('');
+  const [department, setDepartment] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
+  const [trxDate, setTrxDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [isDisposal, setIsDisposal] = useState<boolean>(false);
+
+  // Status & Feedback
   const [formError, setFormError] = useState<string>('');
   const [formSuccess, setFormSuccess] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Live Delegation Preview State (for Issue mode)
+  // Live Delegation Preview (when issuing)
   const [delegationCheck, setDelegationCheck] = useState<{
     isDelegated: boolean;
     badge: 'green' | 'amber';
@@ -47,62 +62,130 @@ export const MovementsPage: React.FC = () => {
     remainingToday?: number;
     reason?: string;
   } | null>(null);
-  const [isCheckingDelegation, setIsCheckingDelegation] = useState(false);
 
-  // Find Main Warehouse
-  const mainWarehouse = custodyWarehouses.find((w) => w.is_main || w.isMain);
-
+  // Fetch initial master data
   const fetchMasterData = async () => {
-    if (!custodyId) return;
-
     try {
-      const [whRes, itRes, movRes] = await Promise.all([
-        fetch(`/api/custodies/${custodyId}/warehouses`),
-        fetch(`/api/custodies/${custodyId}/items`),
-        fetch(`/api/custodies/${custodyId}/movements`),
+      setLoading(true);
+      const [whRes, custRes, itRes] = await Promise.all([
+        fetch('/api/warehouses'),
+        fetch('/api/custodies'),
+        fetch('/api/items'),
       ]);
 
       if (whRes.ok) {
         const whData = await whRes.json();
-        setCustodyWarehouses(whData.warehouses || []);
+        setAllWarehouses(whData.warehouses || []);
+      }
+      if (custRes.ok) {
+        const cData = await custRes.json();
+        setCustodiesList(cData.custodies || []);
+        if (!selectedCustodyId && cData.custodies?.length > 0) {
+          setSelectedCustodyId(String(cData.custodies[0].id));
+        }
       }
       if (itRes.ok) {
         const itData = await itRes.json();
-        setCustodyItems(itData.items || []);
-      }
-      if (movRes.ok) {
-        const mData = await movRes.json();
-        setMovementsList(mData.movements || []);
+        setItemsList(itData.items || []);
       }
     } catch (err) {
-      console.error('Error fetching movement data:', err);
+      console.error('Error fetching movement master data:', err);
     } finally {
       setLoading(false);
     }
   };
 
+  const fetchMovements = async (cId: string) => {
+    try {
+      const url = cId ? `/api/custodies/${cId}/movements` : '/api/ledger';
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setMovementsList(data.movements || []);
+      }
+    } catch (err) {
+      console.error('Error fetching movements:', err);
+    }
+  };
+
   useEffect(() => {
     fetchMasterData();
-  }, [custodyId]);
+  }, []);
 
-  // Set default target warehouse for addition mode to Main Warehouse
   useEffect(() => {
-    if (movementMode === 'addition' && mainWarehouse) {
-      setTargetWarehouseId(String(mainWarehouse.id));
+    if (selectedCustodyId) {
+      fetchMovements(selectedCustodyId);
     }
-  }, [movementMode, mainWarehouse]);
+  }, [selectedCustodyId]);
 
-  // Live Delegation Check when in Issue mode
+  // Two-way synchronization: When Item dropdown changes -> Auto-populate Item Code
+  const handleItemSelectChange = (itemId: string) => {
+    setSelectedItemId(itemId);
+    setFormError('');
+    if (!itemId) {
+      setItemCodeInput('');
+      return;
+    }
+    const found = itemsList.find((it) => String(it.id) === itemId);
+    if (found) {
+      setItemCodeInput(found.item_code || '');
+    }
+  };
+
+  // Two-way synchronization: When Item Code input changes -> Auto-select Item in dropdown
+  const handleItemCodeInputChange = (code: string) => {
+    setItemCodeInput(code);
+    setFormError('');
+    const clean = code.trim().toLowerCase();
+    if (!clean) {
+      setSelectedItemId('');
+      return;
+    }
+    const found = itemsList.find(
+      (it) => it.item_code?.toLowerCase() === clean
+    );
+    if (found) {
+      setSelectedItemId(String(found.id));
+    }
+  };
+
+  // Determine available warehouses for source & target
+  // Filter by selected custody if specified, but always include general company warehouses
+  const availableWarehouses = allWarehouses.filter((w) => {
+    if (!selectedCustodyId) return true;
+    return w.is_general || String(w.custody_id) === selectedCustodyId;
+  });
+
+  // Smart Movement Type Detection based on chosen warehouses
+  let detectedType: 'addition' | 'issue' | 'transfer' | 'none' = 'none';
+  if (!sourceWarehouseId && targetWarehouseId) {
+    detectedType = 'addition';
+  } else if (sourceWarehouseId && !targetWarehouseId) {
+    detectedType = 'issue';
+  } else if (sourceWarehouseId && targetWarehouseId) {
+    detectedType = 'transfer';
+  }
+
+  // Selected item object and balances
+  const selectedItem = itemsList.find((it) => String(it.id) === selectedItemId);
+
+  // Live delegation check when issuing
   useEffect(() => {
-    if (movementMode !== 'issue' || !selectedItemId || !sourceWarehouseId || !quantity || Number(quantity) <= 0) {
+    if (
+      detectedType !== 'issue' ||
+      !selectedCustodyId ||
+      !selectedItemId ||
+      !sourceWarehouseId ||
+      !quantity ||
+      Number(quantity) <= 0
+    ) {
       setDelegationCheck(null);
       return;
     }
 
     const timer = setTimeout(async () => {
-      setIsCheckingDelegation(true);
       try {
-        const res = await fetch(`/api/custodies/${custodyId}/delegation-check`, {
+        const res = await fetch(`/api/custodies/${selectedCustodyId}/delegation-check`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -116,47 +199,59 @@ export const MovementsPage: React.FC = () => {
           setDelegationCheck(data);
         }
       } catch (err) {
-        console.error('Error in live delegation check:', err);
-      } finally {
-        setIsCheckingDelegation(false);
+        console.error('Error running delegation check:', err);
       }
     }, 250);
 
     return () => clearTimeout(timer);
-  }, [movementMode, selectedItemId, sourceWarehouseId, quantity, custodyId]);
+  }, [detectedType, selectedCustodyId, selectedItemId, sourceWarehouseId, quantity]);
 
-  // Reset form messages when switching modes
-  const handleModeSwitch = (mode: 'addition' | 'issue' | 'transfer' | 'disposal') => {
-    setMovementMode(mode);
-    setFormError('');
-    setFormSuccess('');
-    setSelectedItemId('');
-    setQuantity('');
-    setNotes('');
-    setDelegationCheck(null);
-
-    if (mode === 'addition' && mainWarehouse) {
-      setTargetWarehouseId(String(mainWarehouse.id));
-      setSourceWarehouseId('');
-    } else if (mode === 'issue' || mode === 'disposal') {
-      setSourceWarehouseId(mainWarehouse ? String(mainWarehouse.id) : '');
-      setTargetWarehouseId('');
-    } else if (mode === 'transfer') {
-      setSourceWarehouseId(mainWarehouse ? String(mainWarehouse.id) : '');
-      const secondary = custodyWarehouses.find((w) => !w.is_main && !w.isMain);
-      setTargetWarehouseId(secondary ? String(secondary.id) : '');
-    }
-  };
-
-  const handleMovementSubmit = async (e: React.FormEvent) => {
+  // Form Submission
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
     setFormSuccess('');
 
-    if (!selectedItemId || !quantity || Number(quantity) <= 0) {
-      setFormError('يرجى تحديد الصنف وإدخال كمية صالحة');
+    if (!selectedItemId) {
+      setFormError('يرجى تحديد الصنف أو كتابة كود الصنف بشكل صحيح');
       return;
     }
+
+    if (!quantity || Number(quantity) <= 0) {
+      setFormError('يرجى إدخال كمية صحيحة أكبر من صفر');
+      return;
+    }
+
+    if (detectedType === 'none') {
+      setFormError('يرجى اختيار المخزن المخصوم منه (للصرف) أو المخزن المضاف إليه (للوارد) أو كلاهما (للتحويل)');
+      return;
+    }
+
+    if (detectedType === 'transfer' && sourceWarehouseId === targetWarehouseId) {
+      setFormError('لا يمكن التحويل لنفس المخزن، يرجى اختيار مخزن مستقبل مختلف عن المخزن المخصوم منه');
+      return;
+    }
+
+    // Determine target custodyId
+    let targetCustody = selectedCustodyId;
+    if (!targetCustody) {
+      if (sourceWarehouseId) {
+        const sw = allWarehouses.find((w) => String(w.id) === sourceWarehouseId);
+        targetCustody = sw?.custody_id ? String(sw.custody_id) : '1';
+      } else if (targetWarehouseId) {
+        const tw = allWarehouses.find((w) => String(w.id) === targetWarehouseId);
+        targetCustody = tw?.custody_id ? String(tw.custody_id) : '1';
+      }
+    }
+
+    // Combine notes with optional fields
+    const optionalDetails = [
+      notes.trim(),
+      docRef.trim() ? `[رقم المستند/الفاتورة: ${docRef.trim()}]` : null,
+      partyName.trim() ? `[الجهة/المستلم/المورد: ${partyName.trim()}]` : null,
+      department.trim() ? `[القسم/مركز التكلفة: ${department.trim()}]` : null,
+      trxDate ? `[تاريخ المعاملة: ${trxDate}]` : null,
+    ].filter(Boolean).join(' • ');
 
     setIsSubmitting(true);
 
@@ -165,23 +260,24 @@ export const MovementsPage: React.FC = () => {
       let payload: any = {
         itemId: Number(selectedItemId),
         quantity: Number(quantity),
-        notes: notes.trim() || undefined,
+        notes: optionalDetails || undefined,
         userId: user?.id,
       };
 
-      if (movementMode === 'addition') {
-        endpoint = `/api/custodies/${custodyId}/movements/add`;
+      if (detectedType === 'addition') {
+        endpoint = `/api/custodies/${targetCustody}/movements/add`;
         payload.targetWarehouseId = Number(targetWarehouseId);
-      } else if (movementMode === 'issue') {
-        endpoint = `/api/custodies/${custodyId}/movements/issue`;
+      } else if (detectedType === 'issue') {
+        if (isDisposal) {
+          endpoint = `/api/custodies/${targetCustody}/movements/disposal`;
+        } else {
+          endpoint = `/api/custodies/${targetCustody}/movements/issue`;
+        }
         payload.sourceWarehouseId = Number(sourceWarehouseId);
-      } else if (movementMode === 'transfer') {
-        endpoint = `/api/custodies/${custodyId}/movements/transfer`;
+      } else if (detectedType === 'transfer') {
+        endpoint = `/api/custodies/${targetCustody}/movements/transfer`;
         payload.sourceWarehouseId = Number(sourceWarehouseId);
         payload.targetWarehouseId = Number(targetWarehouseId);
-      } else if (movementMode === 'disposal') {
-        endpoint = `/api/custodies/${custodyId}/movements/disposal`;
-        payload.sourceWarehouseId = Number(sourceWarehouseId);
       }
 
       const res = await fetch(endpoint, {
@@ -196,11 +292,22 @@ export const MovementsPage: React.FC = () => {
       }
 
       setFormSuccess(data.message || 'تمت العملية بنجاح');
+      // Reset form
       setSelectedItemId('');
+      setItemCodeInput('');
       setQuantity('');
+      setSourceWarehouseId('');
+      setTargetWarehouseId('');
+      setDocRef('');
+      setPartyName('');
+      setDepartment('');
       setNotes('');
+      setIsDisposal(false);
       setDelegationCheck(null);
+
+      // Refresh master & movements data
       fetchMasterData();
+      if (selectedCustodyId) fetchMovements(selectedCustodyId);
     } catch (err: any) {
       setFormError(err.message || 'حدث خطأ أثناء تنفيذ الحركة');
     } finally {
@@ -208,371 +315,419 @@ export const MovementsPage: React.FC = () => {
     }
   };
 
-  const selectedItemData = custodyItems.find((i) => i.item_id === Number(selectedItemId));
-
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Page Header */}
       <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <ArrowRightLeft className="w-5 h-5 text-indigo-600" />
-            <span>العمليات والحركات المخزنية</span>
+            <span>تسجيل العمليات المخزنية الموحدة</span>
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            العهدة: <strong>{user?.custody_name || 'غير مسكنة'}</strong> • الترقيم المالي الموحد TRX
+            تسجيل فوري وذكي للوارد والصرف والتحويل الداخلي مع التحديد التلقائي لكود الصنف وحركات المخازن
           </p>
         </div>
 
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setActiveTab('create')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-colors ${
-              activeTab === 'create'
-                ? 'bg-indigo-600 text-white shadow-xs'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
-            }`}
-          >
-            تسجيل حركة جديدة
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('history')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-colors ${
-              activeTab === 'history'
-                ? 'bg-indigo-600 text-white shadow-xs'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
-            }`}
-          >
-            سجل العمليات الحديثة ({movementsList.length})
-          </button>
+        <div className="flex items-center gap-3">
+          {/* Admin Custody Selector if multi-custody */}
+          {isAdmin && custodiesList.length > 0 && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-slate-500 font-semibold">العهدة:</span>
+              <select
+                value={selectedCustodyId}
+                onChange={(e) => setSelectedCustodyId(e.target.value)}
+                className="px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-semibold"
+              >
+                {custodiesList.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveTab('create')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-colors ${
+                activeTab === 'create'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
+              }`}
+            >
+              تسجيل عملية
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('history')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-colors ${
+                activeTab === 'history'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
+              }`}
+            >
+              سجل العمليات ({movementsList.length})
+            </button>
+          </div>
         </div>
       </div>
 
       {activeTab === 'create' && (
-        <div className="space-y-6">
-          {/* Governance Notice for Storekeeper */}
-          {user?.role === 'storekeeper' && (
-            <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 flex items-start gap-3">
-              <Clock className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-              <div className="text-xs text-amber-950 dark:text-amber-200 space-y-1">
-                <p className="font-bold">
-                  تنبيه الحوكمة الرقابية (صلاحية أمين العهدة):
-                </p>
-                <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
-                  تخضع جميع عمليات الإضافة (الوارد الخارجي)، والتحويل الداخلي، والخصم غير المفوض، والتكهين لرقابة رئيس القسم. يتم تسجيل الطلب معلقاً وحجز الكمية فورياً، مع إرسال إشعار لحظي لرئيس القسم لاتخاذ قرار الاعتماد أو الرفض.
-                </p>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-xs space-y-6">
+          {/* Notice for Storekeeper */}
+          {isStorekeeper && (
+            <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200">
+              <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold">ملاحظة الحوكمة (أمين العهدة): </span>
+                العمليات غير المفوضة فورياً تُسجل معلقة وتُرسل إشعاراً لرئيس القسم لاعتمادها أو رفضها مع حجز الكميات فورياً.
               </div>
             </div>
           )}
 
-          {/* Operation Type Switcher */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <button
-              type="button"
-              onClick={() => handleModeSwitch('addition')}
-              className={`p-4 rounded-xl border text-right transition-all cursor-pointer ${
-                movementMode === 'addition'
-                  ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-500 ring-2 ring-indigo-500/20'
-                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <PlusCircle className={`w-5 h-5 ${movementMode === 'addition' ? 'text-indigo-600' : 'text-slate-400'}`} />
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
-                  {user?.role === 'storekeeper' ? 'طلب معلق للموافقة' : 'المخزن الرئيسي فقط'}
-                </span>
-              </div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">إضافة (وارد خارجي)</h3>
-              <p className="text-[11px] text-slate-400 mt-0.5">توريد أو شراء خارجي</p>
-            </button>
+          {/* Alert Messages */}
+          {formError && (
+            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border border-rose-200 text-xs font-semibold flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{formError}</span>
+            </div>
+          )}
 
-            <button
-              type="button"
-              onClick={() => handleModeSwitch('issue')}
-              className={`p-4 rounded-xl border text-right transition-all cursor-pointer ${
-                movementMode === 'issue'
-                  ? 'bg-emerald-50/70 dark:bg-emerald-950/40 border-emerald-500 ring-2 ring-emerald-500/20'
-                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <MinusCircle className={`w-5 h-5 ${movementMode === 'issue' ? 'text-emerald-600' : 'text-slate-400'}`} />
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
-                  تفويض ذكي لحظي
-                </span>
-              </div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">خصم مخزني</h3>
-              <p className="text-[11px] text-slate-400 mt-0.5">صرف مفوض أو طلب معلق</p>
-            </button>
+          {formSuccess && (
+            <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 text-xs font-semibold flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>{formSuccess}</span>
+            </div>
+          )}
 
-            <button
-              type="button"
-              onClick={() => handleModeSwitch('transfer')}
-              className={`p-4 rounded-xl border text-right transition-all cursor-pointer ${
-                movementMode === 'transfer'
-                  ? 'bg-sky-50/70 dark:bg-sky-950/40 border-sky-500 ring-2 ring-sky-500/20'
-                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <Repeat className={`w-5 h-5 ${movementMode === 'transfer' ? 'text-sky-600' : 'text-slate-400'}`} />
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300">
-                  {user?.role === 'storekeeper' ? 'حجز واعتماد' : 'فوري وذري'}
-                </span>
+          <form onSubmit={handleSubmit} className="space-y-6 text-xs">
+            {/* 1. Item Selection & Code with Two-Way Synchronization */}
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 space-y-3">
+              <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-indigo-600" />
+                <span>بيانات الصنف (تحديد تلقائي متبادل بين الصنف والكود)</span>
               </div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">تحويل داخلي</h3>
-              <p className="text-[11px] text-slate-400 mt-0.5">نقل بين مخازن نفس العهدة</p>
-            </button>
 
-            <button
-              type="button"
-              onClick={() => handleModeSwitch('disposal')}
-              className={`p-4 rounded-xl border text-right transition-all cursor-pointer ${
-                movementMode === 'disposal'
-                  ? 'bg-rose-50/70 dark:bg-rose-950/40 border-rose-500 ring-2 ring-rose-500/20'
-                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <Trash2 className={`w-5 h-5 ${movementMode === 'disposal' ? 'text-rose-600' : 'text-slate-400'}`} />
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300">
-                  اعتماد رئيس القسم
-                </span>
-              </div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">خروج نهائي</h3>
-              <p className="text-[11px] text-slate-400 mt-0.5">إتلاف أو تكهين رسمي</p>
-            </button>
-          </div>
-
-          {/* Form Card */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-xs space-y-5">
-            {/* Strict Main Warehouse Guidance Callout (Rule 3) */}
-            {movementMode === 'addition' && (
-              <div className="p-4 bg-indigo-50/80 dark:bg-indigo-950/30 rounded-xl border border-indigo-200 dark:border-indigo-900/60 flex items-start gap-3">
-                <Info className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
-                <div className="text-xs text-indigo-950 dark:text-indigo-200 leading-relaxed">
-                  <h4 className="font-bold">القاعدة الحاكمة للوارد الخارجي (Rule 3):</h4>
-                  <p className="mt-0.5">
-                    الوارد الخارجي يُسجل حصرياً في <strong>المخزن الرئيسي للعهدة</strong>، ويتم توزيعه للمخازن الفرعية عبر <strong>التحويل الداخلي</strong>. {user?.role === 'storekeeper' ? 'تُسجل الحركة كطلب معلق بانتظار موافقة رئيس القسم لإضافة الرصيد للمخزن.' : ''}
-                  </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Item Dropdown */}
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    اختر الصنف *
+                  </label>
+                  <select
+                    value={selectedItemId}
+                    onChange={(e) => handleItemSelectChange(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium"
+                  >
+                    <option value="">حدد الصنف من قائمة الأصناف</option>
+                    {itemsList.map((it) => (
+                      <option key={it.id} value={it.id}>
+                        {it.name} — {it.item_code} ({it.unit_name || 'وحدة'})
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              </div>
-            )}
 
-            {movementMode === 'transfer' && user?.role === 'storekeeper' && (
-              <div className="p-4 bg-sky-50/80 dark:bg-sky-950/30 rounded-xl border border-sky-200 dark:border-sky-900/60 flex items-start gap-3">
-                <Info className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
-                <div className="text-xs text-sky-950 dark:text-sky-200 leading-relaxed">
-                  <h4 className="font-bold">حجز الرصيد أثناء طلب التحويل:</h4>
-                  <p className="mt-0.5">
-                    سيتم فورياً حجز الكمية المطلوبة من المخزن المصدر لمنع صرفها في عمليات أخرى، وتظل معلقة لحين موافقة رئيس القسم ليتم ترحيلها إلى المخزن الهدف.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {formError && (
-              <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border border-rose-200 text-xs font-semibold flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>{formError}</span>
-              </div>
-            )}
-
-            {formSuccess && (
-              <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 text-xs font-semibold flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>{formSuccess}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleMovementSubmit} className="space-y-4 text-xs">
-              {/* Item Selection */}
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  اختر الصنف المطلوب *
-                </label>
-                <select
-                  required
-                  value={selectedItemId}
-                  onChange={(e) => setSelectedItemId(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                >
-                  <option value="">حدد الصنف من قائمة أصناف العهدة</option>
-                  {custodyItems.map((it) => (
-                    <option key={it.item_id} value={it.item_id}>
-                      {it.name} ({it.item_code}) — الرصيد المتاح: {it.available_qty} {it.unit_symbol}
-                    </option>
-                  ))}
-                </select>
-                {selectedItemData && (
-                  <div className="flex gap-4 text-[11px] text-slate-500 mt-1.5 px-1">
-                    <span>الرصيد الفعلي الإجمالي: <strong>{selectedItemData.quantity}</strong></span>
-                    <span>الرصيد المحجوز: <strong className="text-amber-600">{selectedItemData.reserved_qty}</strong></span>
-                    <span>الرصيد الحر المتاح: <strong className="text-emerald-600">{selectedItemData.available_qty}</strong></span>
-                  </div>
-                )}
-              </div>
-
-              {/* Warehouses Selection Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Source Warehouse (Issue, Transfer, Disposal) */}
-                {movementMode !== 'addition' && (
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      المخزن المصدر (المخصوم منه) *
-                    </label>
-                    <select
-                      required
-                      value={sourceWarehouseId}
-                      onChange={(e) => setSourceWarehouseId(e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                    >
-                      <option value="">اختر المخزن المصدر</option>
-                      {custodyWarehouses.map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {w.name} {w.is_main || w.isMain ? '(المخزن الرئيسي)' : '(فرعي)'}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {/* Target Warehouse (Addition or Transfer) */}
-                {(movementMode === 'addition' || movementMode === 'transfer') && (
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      المخزن الهدف (المستقبل) *
-                    </label>
-                    {movementMode === 'addition' ? (
-                      <input
-                        type="text"
-                        disabled
-                        value={mainWarehouse?.name || 'المخزن الرئيسي للعهدة (إلزامي)'}
-                        className="w-full px-3 py-2.5 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/20 text-indigo-900 dark:text-indigo-200 font-bold cursor-not-allowed"
-                      />
-                    ) : (
-                      <select
-                        required
-                        value={targetWarehouseId}
-                        onChange={(e) => setTargetWarehouseId(e.target.value)}
-                        className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                      >
-                        <option value="">اختر المخزن الهدف للتحويل</option>
-                        {custodyWarehouses
-                          .filter((w) => String(w.id) !== sourceWarehouseId)
-                          .map((w) => (
-                            <option key={w.id} value={w.id}>
-                              {w.name} {w.is_main || w.isMain ? '(المخزن الرئيسي)' : '(فرعي)'}
-                            </option>
-                          ))}
-                      </select>
+                {/* Item Code Input */}
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    كود الصنف (اكتب الكود وسيتم اختيار الصنف تلقائياً) *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="مثال: ITEM-0001 أو امسح الباركود..."
+                      value={itemCodeInput}
+                      onChange={(e) => handleItemCodeInputChange(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono uppercase"
+                    />
+                    {selectedItem && (
+                      <span className="absolute left-3 top-2.5 text-emerald-600 dark:text-emerald-400 font-bold text-[11px] flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        صنف مطابق
+                      </span>
                     )}
                   </div>
-                )}
+                </div>
               </div>
 
-              {/* Quantity */}
+              {selectedItem && (
+                <div className="p-2.5 rounded-lg bg-indigo-50/70 dark:bg-indigo-950/30 text-indigo-900 dark:text-indigo-200 text-[11px] flex flex-wrap gap-4 font-medium border border-indigo-100 dark:border-indigo-900/40">
+                  <span>اسم الصنف: <strong>{selectedItem.name}</strong></span>
+                  <span>الكود: <strong className="font-mono">{selectedItem.item_code}</strong></span>
+                  <span>وحدة القياس: <strong>{selectedItem.unit_name || 'وحدة'}</strong></span>
+                  <span>حد الأمان: <strong>{selectedItem.min_limit || 0}</strong></span>
+                </div>
+              )}
+            </div>
+
+            {/* 2. Warehouses Selection (المخصوم منه والمضاف إليه) */}
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 space-y-4">
+              <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                <WarehouseIcon className="w-4 h-4 text-indigo-600" />
+                <span>تحديد المخازن (المخصوم منه والمضاف إليه)</span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Source Warehouse (المخصوم منه) */}
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    المخزن المخصوم منه (اتركه فارغاً إذا كانت العملية إضافة/وارد جديد)
+                  </label>
+                  <select
+                    value={sourceWarehouseId}
+                    onChange={(e) => {
+                      setSourceWarehouseId(e.target.value);
+                      setFormError('');
+                    }}
+                    className={`w-full px-3 py-2.5 rounded-xl border bg-white dark:bg-slate-900 font-medium ${
+                      sourceWarehouseId
+                        ? 'border-rose-400 dark:border-rose-700 text-rose-950 dark:text-rose-100'
+                        : 'border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    <option value="">— بدون مخزن مصدر (حركة وارد خارجي أو إضافة جديدة) —</option>
+                    {availableWarehouses.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name} {w.is_main ? '(المخزن الرئيسي)' : w.is_general ? '(مخزن عام)' : '(فرعي)'} {w.custody_name ? `• عهدة ${w.custody_name}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Target Warehouse (المضاف إليه) */}
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    المخزن المضاف إليه (اتركه فارغاً إذا كانت العملية خصم/صرف مخزني)
+                  </label>
+                  <select
+                    value={targetWarehouseId}
+                    onChange={(e) => {
+                      setTargetWarehouseId(e.target.value);
+                      setFormError('');
+                    }}
+                    className={`w-full px-3 py-2.5 rounded-xl border bg-white dark:bg-slate-900 font-medium ${
+                      targetWarehouseId
+                        ? 'border-emerald-400 dark:border-emerald-700 text-emerald-950 dark:text-emerald-100'
+                        : 'border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    <option value="">— بدون مخزن هدف (حركة صرف / خروج من المخزن) —</option>
+                    {availableWarehouses.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name} {w.is_main ? '(المخزن الرئيسي)' : w.is_general ? '(مخزن عام)' : '(فرعي)'} {w.custody_name ? `• عهدة ${w.custody_name}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Dynamic Movement Nature Indicator */}
+              <div className="p-3 rounded-xl border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs bg-white dark:bg-slate-900">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-slate-500">نوع الحركة المكتشف تلقائياً:</span>
+                  {detectedType === 'addition' && (
+                    <span className="px-2.5 py-1 rounded-full font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
+                      وارد مخزني (إضافة إلى المخزن المضاف إليه)
+                    </span>
+                  )}
+                  {detectedType === 'issue' && (
+                    <span className="px-2.5 py-1 rounded-full font-bold bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-rose-600"></span>
+                      {isDisposal ? 'خروج نهائي / تكهين' : 'صرف مخزني (خصم من المخزن المخصوم منه)'}
+                    </span>
+                  )}
+                  {detectedType === 'transfer' && (
+                    <span className="px-2.5 py-1 rounded-full font-bold bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-sky-600"></span>
+                      تحويل داخلي بين المخازن
+                    </span>
+                  )}
+                  {detectedType === 'none' && (
+                    <span className="text-amber-600 font-medium">
+                      يرجى اختيار المخزن المخصوم منه أو المضاف إليه لتحديد طبيعة العملية تلقائياً
+                    </span>
+                  )}
+                </div>
+
+                {/* Optional Disposal Toggle when issuing */}
+                {detectedType === 'issue' && (
+                  <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-semibold">
+                    <input
+                      type="checkbox"
+                      checked={isDisposal}
+                      onChange={(e) => setIsDisposal(e.target.checked)}
+                      className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500"
+                    />
+                    <span>هل العملية إتلاف أو خروج نهائي / تكهين؟</span>
+                  </label>
+                )}
+              </div>
+            </div>
+
+            {/* 3. Quantity & Delegation Check */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  الكمية بالوحدة الأساسية ({selectedItemData?.unit_name || 'وحدة'}) *
+                  الكمية بالوحدة الأساسية ({selectedItem?.unit_name || 'وحدة'}) *
                 </label>
                 <input
                   type="number"
                   step="0.001"
                   min="0.001"
                   required
-                  placeholder="مثال: 15 أو 2.500"
+                  placeholder="مثال: 10 أو 2.500"
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-base font-bold text-left dir-ltr"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold"
                 />
               </div>
 
-              {/* Delegation Badge for Issue Mode (Rule 4) */}
-              {movementMode === 'issue' && delegationCheck && (
+              {/* Delegation Banner for Issue */}
+              {detectedType === 'issue' && delegationCheck && (
                 <div
-                  className={`p-3.5 rounded-xl border text-xs font-semibold flex items-start gap-2.5 transition-all ${
+                  className={`p-3 rounded-xl border flex items-center gap-2 ${
                     delegationCheck.badge === 'green'
-                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
-                      : 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 text-amber-800 dark:text-amber-300'
                   }`}
                 >
-                  {delegationCheck.badge === 'green' ? (
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                  ) : (
-                    <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                  )}
-                  <div className="leading-relaxed">
+                  <Clock className="w-4 h-4 shrink-0" />
+                  <div className="leading-tight">
                     <p className="font-bold">{delegationCheck.badgeText}</p>
                     {delegationCheck.badge === 'green' ? (
-                      <p className="text-[11px] text-emerald-700 dark:text-emerald-300 mt-0.5">
-                        سيتم تنفيذ الخصم فورياً وإنقاص الرصيد دون انتظار رئيس القسم.
-                      </p>
+                      <p className="text-[11px] opacity-80">سيتم الخصم فورياً بالصلاحية المفوضة.</p>
                     ) : (
-                      <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
-                        سيتم حجز الكمية فورياً في حقل (الرصيد المحجوز) لحين مراجعة واعتماد رئيس القسم.
-                      </p>
+                      <p className="text-[11px] opacity-80">سيتطلب اعتماد رئيس القسم وتُحجز الكمية.</p>
                     )}
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* 4. Optional Fields (أماكن لباقي البيانات اختياري المستخدم يملاها أو يسيبها فاضية) */}
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <FileText className="w-4 h-4 text-slate-400" />
+                  بيانات إضافية توثيقية (اختيارية - يمكنك ملؤها أو تركها فارغة)
+                </span>
+                <span className="text-[11px] text-slate-400 font-normal">اختياري</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                {/* Document Reference */}
+                <div>
+                  <label className="block text-slate-600 dark:text-slate-400 mb-1">
+                    رقم الإذن / الفاتورة / أمر الشغل
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="مثال: فاتورة 1024 أو إذن 88"
+                    value={docRef}
+                    onChange={(e) => setDocRef(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs"
+                  />
+                </div>
+
+                {/* Recipient / Vendor */}
+                <div>
+                  <label className="block text-slate-600 dark:text-slate-400 mb-1">
+                    اسم المورد / المستلم / المستفيد
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="مثال: شركة النور أو م. أحمد"
+                    value={partyName}
+                    onChange={(e) => setPartyName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs"
+                  />
+                </div>
+
+                {/* Department */}
+                <div>
+                  <label className="block text-slate-600 dark:text-slate-400 mb-1">
+                    مركز التكلفة / القسم الطالب
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="مثال: قسم الصيانة أو خط الإنتاج 2"
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs"
+                  />
+                </div>
+
+                {/* Transaction Date */}
+                <div>
+                  <label className="block text-slate-600 dark:text-slate-400 mb-1">
+                    تاريخ المعاملة
+                  </label>
+                  <input
+                    type="date"
+                    value={trxDate}
+                    onChange={(e) => setTrxDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs"
+                  />
+                </div>
+              </div>
 
               {/* Notes */}
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  البيان والملاحظات
+                <label className="block text-slate-600 dark:text-slate-400 mb-1">
+                  البيان والملاحظات العامة
                 </label>
                 <input
                   type="text"
-                  placeholder="مثال: إذن إضافة توريد فاتورة رقم 1024 أو أمر صرف ورشة..."
+                  placeholder="ملاحظات توضيحية حول العملية أو بنود الصرف..."
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs"
                 />
               </div>
+            </div>
 
-              {/* Submit Button */}
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={isSubmitting || !selectedItemId || !quantity}
-                  className={`w-full py-3 rounded-xl font-bold text-sm shadow-xs transition-colors cursor-pointer ${
-                    !isSubmitting && selectedItemId && quantity
-                      ? movementMode === 'addition'
-                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                        : movementMode === 'issue'
-                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                        : movementMode === 'transfer'
-                        ? 'bg-sky-600 hover:bg-sky-700 text-white'
-                        : 'bg-rose-600 hover:bg-rose-700 text-white'
-                      : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
-                  }`}
-                >
-                  {isSubmitting
-                    ? 'جارٍ تنفيذ وتسجيل الحركة...'
-                    : user?.role === 'storekeeper'
-                    ? movementMode === 'addition'
-                      ? 'رفع طلب إذن إضافة وارد (بانتظار موافقة رئيس القسم)'
-                      : movementMode === 'issue'
-                      ? delegationCheck?.badge === 'green'
-                        ? 'تنفيذ إذن الصرف اللحظي (مفوض)'
-                        : 'رفع طلب إذن الصرف (بانتظار موافقة رئيس القسم)'
-                      : movementMode === 'transfer'
-                      ? 'رفع طلب تحويل داخلي (بانتظار موافقة رئيس القسم)'
-                      : 'رفع طلب خروج نهائي / تكهين (بانتظار موافقة رئيس القسم)'
-                    : movementMode === 'addition'
-                    ? 'تأكيد إضافة الوارد للمخزن الرئيسي'
-                    : movementMode === 'issue'
-                    ? 'تأكيد تسجيل الخصم'
-                    : movementMode === 'transfer'
-                    ? 'تأكيد التحويل الداخلي الفوري'
-                    : 'تأكيد خروج الصنف نهائياً'}
-                </button>
-              </div>
-            </form>
-          </div>
+            {/* Submit Button */}
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={isSubmitting || !selectedItemId || !quantity || detectedType === 'none'}
+                className={`w-full py-3.5 rounded-xl font-bold text-sm shadow-xs transition-colors cursor-pointer ${
+                  !isSubmitting && selectedItemId && quantity && detectedType !== 'none'
+                    ? detectedType === 'addition'
+                      ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                      : detectedType === 'issue'
+                      ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                      : 'bg-sky-600 hover:bg-sky-700 text-white'
+                    : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                }`}
+              >
+                {isSubmitting
+                  ? 'جارٍ تسجيل العملية...'
+                  : isStorekeeper
+                  ? detectedType === 'addition'
+                    ? 'رفع طلب إذن إضافة وارد (بانتظار موافقة رئيس القسم)'
+                    : detectedType === 'issue'
+                    ? delegationCheck?.badge === 'green'
+                      ? 'تنفيذ إذن الصرف اللحظي (مفوض)'
+                      : 'رفع طلب إذن الصرف (بانتظار موافقة رئيس القسم)'
+                    : detectedType === 'transfer'
+                    ? 'رفع طلب تحويل داخلي (بانتظار موافقة رئيس القسم)'
+                    : 'تأكيد وحفظ العملية المخزنية'
+                  : detectedType === 'addition'
+                  ? 'تأكيد إضافة الوارد للمخزن'
+                  : detectedType === 'issue'
+                  ? 'تأكيد تسجيل الخصم المخزني'
+                  : detectedType === 'transfer'
+                  ? 'تأكيد التحويل المخزني الفوري'
+                  : 'تأكيد وحفظ العملية المخزنية'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
@@ -582,35 +737,43 @@ export const MovementsPage: React.FC = () => {
           {movementsList.length === 0 ? (
             <div className="p-12 text-center text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
               <ArrowRightLeft className="w-8 h-8 mx-auto opacity-50" />
-              <p className="text-xs">لا توجد أي حركات مخزنية مسجلة بعد (Zero Records). ابدأ بتسجيل أول حركة تشغيلية بيدك.</p>
+              <p className="text-xs">لا توجد حركات مخزنية مسجلة بعد. استخدم نموذج التسجيل بالأعلى لإدخال أول حركة.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-right text-xs">
                 <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 border-y border-slate-200 dark:border-slate-800">
                   <tr>
-                    <th className="py-2.5 px-3">رقم المعاملة TRX</th>
-                    <th className="py-2.5 px-3">النوع</th>
+                    <th className="py-2.5 px-3">رقم TRX</th>
+                    <th className="py-2.5 px-3">نوع العملية</th>
                     <th className="py-2.5 px-3">الصنف</th>
-                    <th className="py-2.5 px-3">المخزن المصدر</th>
-                    <th className="py-2.5 px-3">المخزن الهدف</th>
+                    <th className="py-2.5 px-3">المخزن المخصوم منه</th>
+                    <th className="py-2.5 px-3">المخزن المضاف إليه</th>
                     <th className="py-2.5 px-3 text-center">الكمية</th>
                     <th className="py-2.5 px-3">الحالة</th>
-                    <th className="py-2.5 px-3">المنفذ / التاريخ</th>
+                    <th className="py-2.5 px-3">التاريخ والمنفذ</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                   {movementsList.map((m) => (
-                    <tr key={m.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                      <td className="py-2.5 px-3 font-mono font-bold text-slate-900 dark:text-white">
+                    <tr key={m.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                      <td className="py-3 px-3 font-mono font-bold text-indigo-600 dark:text-indigo-400">
                         {m.trx_number}
                       </td>
-                      <td className="py-2.5 px-3">
-                        <span className="font-semibold">
-                          {m.movement_type === 'addition'
-                            ? 'إضافة'
+                      <td className="py-3 px-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          m.movement_type === 'addition'
+                            ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300'
                             : m.movement_type === 'issue'
-                            ? 'خصم'
+                            ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
+                            : m.movement_type === 'internal_transfer'
+                            ? 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {m.movement_type === 'addition'
+                            ? 'وارد خارجي'
+                            : m.movement_type === 'issue'
+                            ? 'خصم مخزني'
                             : m.movement_type === 'internal_transfer'
                             ? 'تحويل داخلي'
                             : m.movement_type === 'disposal'
@@ -618,35 +781,39 @@ export const MovementsPage: React.FC = () => {
                             : m.movement_type}
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 font-semibold text-slate-900 dark:text-white">
-                        {m.item_name} <span className="text-[10px] text-slate-400 font-mono">({m.item_code})</span>
+                      <td className="py-3 px-3">
+                        <div className="font-bold text-slate-800 dark:text-slate-200">{m.item_name}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">{m.item_code}</div>
                       </td>
-                      <td className="py-2.5 px-3 text-slate-500">{m.source_warehouse_name || '—'}</td>
-                      <td className="py-2.5 px-3 text-slate-500">{m.target_warehouse_name || '—'}</td>
-                      <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-900 dark:text-white">
-                        {m.quantity} {m.unit_symbol}
+                      <td className="py-3 px-3 text-slate-600 dark:text-slate-300">
+                        {m.source_warehouse_name || '—'}
                       </td>
-                      <td className="py-2.5 px-3">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                            m.status === 'executed' || m.status === 'executed_delegated'
-                              ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300'
-                              : m.status === 'pending_approval'
-                              ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300'
-                              : 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300'
-                          }`}
-                        >
-                          {m.status === 'executed_delegated'
-                            ? 'خصم مفوض فوري'
-                            : m.status === 'executed'
-                            ? 'منفذ ومعتمد'
+                      <td className="py-3 px-3 text-slate-600 dark:text-slate-300">
+                        {m.target_warehouse_name || '—'}
+                      </td>
+                      <td className="py-3 px-3 text-center font-bold">
+                        {m.quantity} {m.unit_symbol || ''}
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          m.status === 'executed' || m.status === 'approved' || m.status === 'executed_delegated'
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                             : m.status === 'pending_approval'
-                            ? 'معلق (محجوز)'
-                            : m.status}
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                            : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                        }`}>
+                          {m.status === 'executed' || m.status === 'approved'
+                            ? 'معتمدة ومنفذة'
+                            : m.status === 'executed_delegated'
+                            ? 'خصم مفوض فورياً'
+                            : m.status === 'pending_approval'
+                            ? 'معلقة للموافقة'
+                            : 'مرفوضة'}
                         </span>
                       </td>
-                      <td className="py-2.5 px-3 text-[11px] text-slate-500">
-                        {m.creator_name} ({new Date(m.created_at).toLocaleDateString('ar-EG')})
+                      <td className="py-3 px-3 text-[11px] text-slate-500">
+                        <div>{new Date(m.created_at).toLocaleDateString('ar-EG')}</div>
+                        <div className="text-[10px] text-slate-400">{m.creator_name || m.creator_code}</div>
                       </td>
                     </tr>
                   ))}

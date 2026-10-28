@@ -322,11 +322,16 @@ movementsRouter.post('/:id/movements/add', async (req: Request, res: Response) =
       return;
     }
 
-    // STRICT RULE: Target warehouse MUST be the Main Warehouse (is_main = true) of this custody
+    // Validate target warehouse exists and belongs to this custody (or is general company warehouse)
     const targetWh = db
       .select()
       .from(warehouses)
-      .where(and(eq(warehouses.id, Number(targetWarehouseId)), eq(warehouses.custodyId, custodyId)))
+      .where(
+        and(
+          eq(warehouses.id, Number(targetWarehouseId)),
+          or(eq(warehouses.custodyId, custodyId), eq(warehouses.isGeneral, true))
+        )
+      )
       .get();
 
     if (!targetWh) {
@@ -334,15 +339,8 @@ movementsRouter.post('/:id/movements/add', async (req: Request, res: Response) =
       return;
     }
 
-    if (!targetWh.isMain) {
-      res.status(400).json({
-        error: 'مخالفة تشغيلية: حركات الوارد الخارجي (الإضافة) مقيدة حصرياً بالمخزن الرئيسي للعهدة فقط! للتخزين في المخازن الفرعية استخدم التحويل الداخلي.',
-      });
-      return;
-    }
-
     if (targetWh.status === 'frozen') {
-      res.status(400).json({ error: 'المخزن الرئيسي مجمد حالياً بسبب جلسة جرد نشطة' });
+      res.status(400).json({ error: 'المخزن مجمد حالياً بسبب جلسة جرد نشطة' });
       return;
     }
 

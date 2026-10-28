@@ -15,6 +15,7 @@ import { ledgerRouter } from './src/server/routes/ledger.ts';
 import { inventoryRouter } from './src/server/routes/inventory.ts';
 import { backupRouter } from './src/server/routes/backup.ts';
 import { notificationsRouter } from './src/server/routes/notifications.ts';
+import { warehousesRouter } from './src/server/routes/warehouses.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,6 +37,7 @@ async function startServer() {
   app.use('/api/users', usersRouter);
   app.use('/api/dashboard', dashboardRouter);
   app.use('/api/custodies', custodyRouter);
+  app.use('/api/warehouses', warehousesRouter);
   app.use('/api/custodies', importRouter);
   app.use('/api/custodies', movementsRouter);
   app.use('/api/movements', movementsRouter);

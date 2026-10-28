@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { db, sqlite } from '../db/index.ts';
 import { custodies, warehouses, users, stockBalances, movements, auditLogs, companySettings } from '../db/schema.ts';
-import { eq, and, sql, sum, count } from 'drizzle-orm';
+import { eq, and, or, sql, sum, count } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 
 export const custodyRouter = Router();
@@ -316,14 +316,14 @@ custodyRouter.post('/:id/archive', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/custodies/:id/warehouses - List warehouses for custody
+// GET /api/custodies/:id/warehouses - List warehouses for custody + general company warehouses
 custodyRouter.get('/:id/warehouses', async (req: Request, res: Response) => {
   try {
     const custodyId = Number(req.params.id);
     const list = db
       .select()
       .from(warehouses)
-      .where(eq(warehouses.custodyId, custodyId))
+      .where(or(eq(warehouses.custodyId, custodyId), eq(warehouses.isGeneral, true)))
       .all();
     res.json({ warehouses: list });
   } catch (error) {

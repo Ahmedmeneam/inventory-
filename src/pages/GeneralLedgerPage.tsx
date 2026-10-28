@@ -33,12 +33,13 @@ export const GeneralLedgerPage: React.FC = () => {
   const isSupervisor = user?.role === 'supervisor';
   const userCustodyId = user?.custody_id;
 
-  const [activeTab, setActiveTab] = useState<'ledger' | 'statement'>('ledger');
+  const [activeTab, setActiveTab] = useState<'ledger' | 'statement' | 'warehouses'>('ledger');
 
   // Ledger state
   const [movementsList, setMovementsList] = useState<any[]>([]);
   const [custodiesList, setCustodiesList] = useState<any[]>([]);
   const [itemsList, setItemsList] = useState<any[]>([]);
+  const [allWarehousesList, setAllWarehousesList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filters
@@ -46,6 +47,7 @@ export const GeneralLedgerPage: React.FC = () => {
   const [selectedCustody, setSelectedCustody] = useState<string>(
     !isAdmin && userCustodyId ? String(userCustodyId) : 'all'
   );
+  const [selectedWarehouse, setSelectedWarehouse] = useState<string>('all');
   const [selectedType, setSelectedType] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [fromDate, setFromDate] = useState('');
@@ -55,6 +57,12 @@ export const GeneralLedgerPage: React.FC = () => {
   const [selectedItemId, setSelectedItemId] = useState<string>('');
   const [itemStatementData, setItemStatementData] = useState<any | null>(null);
   const [loadingStatement, setLoadingStatement] = useState(false);
+
+  // Warehouse Statement & Accounts state
+  const [selectedStatementWhId, setSelectedStatementWhId] = useState<string>('');
+  const [warehouseBalances, setWarehouseBalances] = useState<any[]>([]);
+  const [warehouseMovements, setWarehouseMovements] = useState<any[]>([]);
+  const [loadingWhData, setLoadingWhData] = useState(false);
 
   // Reversal Modal
   const [reversalTarget, setReversalTarget] = useState<any | null>(null);
@@ -69,16 +77,18 @@ export const GeneralLedgerPage: React.FC = () => {
       setLoading(true);
       const params = new URLSearchParams();
       if (selectedCustody && selectedCustody !== 'all') params.append('custodyId', selectedCustody);
+      if (selectedWarehouse && selectedWarehouse !== 'all') params.append('warehouseId', selectedWarehouse);
       if (selectedType && selectedType !== 'all') params.append('movementType', selectedType);
       if (selectedStatus && selectedStatus !== 'all') params.append('status', selectedStatus);
       if (fromDate) params.append('fromDate', fromDate);
       if (toDate) params.append('toDate', toDate);
       if (searchQuery) params.append('search', searchQuery);
 
-      const [ledgerRes, custRes, itemsRes] = await Promise.all([
+      const [ledgerRes, custRes, itemsRes, whRes] = await Promise.all([
         fetch(`/api/ledger?${params.toString()}`),
         fetch('/api/custodies'),
         fetch('/api/items'),
+        fetch('/api/warehouses'),
       ]);
 
       if (ledgerRes.ok) {
@@ -96,6 +106,14 @@ export const GeneralLedgerPage: React.FC = () => {
           setSelectedItemId(String(iData.items[0].id));
         }
       }
+      if (whRes.ok) {
+        const whData = await whRes.json();
+        const list = whData.warehouses || [];
+        setAllWarehousesList(list);
+        if (!selectedStatementWhId && list.length > 0) {
+          setSelectedStatementWhId(String(list[0].id));
+        }
+      }
     } catch (err) {
       console.error('Error fetching ledger data:', err);
     } finally {
@@ -105,7 +123,7 @@ export const GeneralLedgerPage: React.FC = () => {
 
   useEffect(() => {
     fetchLedgerData();
-  }, [selectedCustody, selectedType, selectedStatus, fromDate, toDate]);
+  }, [selectedCustody, selectedWarehouse, selectedType, selectedStatus, fromDate, toDate]);
 
   // Fetch item statement when selected item changes
   const fetchItemStatement = async (id: string) => {
@@ -125,11 +143,36 @@ export const GeneralLedgerPage: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    if (activeTab === 'statement' && selectedItemId) {
-      fetchItemStatement(selectedItemId);
+  // Fetch warehouse statement when selected warehouse changes
+  const fetchWarehouseStatement = async (whId: string) => {
+    if (!whId) return;
+    try {
+      setLoadingWhData(true);
+      const [balRes, movRes] = await Promise.all([
+        fetch(`/api/warehouses/${whId}/balances`),
+        fetch(`/api/warehouses/${whId}/movements`),
+      ]);
+
+      if (balRes.ok) {
+        const bData = await balRes.json();
+        setWarehouseBalances(bData.balances || []);
+      }
+      if (movRes.ok) {
+        const mData = await movRes.json();
+        setWarehouseMovements(mData.movements || []);
+      }
+    } catch (err) {
+      console.error('Error fetching warehouse statement data:', err);
+    } finally {
+      setLoadingWhData(false);
     }
-  }, [activeTab, selectedItemId]);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'warehouses' && selectedStatementWhId) {
+      fetchWarehouseStatement(selectedStatementWhId);
+    }
+  }, [activeTab, selectedStatementWhId]);
 
   // Handle Search submit
   const handleSearch = (e: React.FormEvent) => {
@@ -449,6 +492,22 @@ export const GeneralLedgerPage: React.FC = () => {
           <Layers className="w-4 h-4" />
           <span>كشف حساب الصنف والتوزيع المخزني</span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('warehouses')}
+          className={`py-3 px-5 text-xs font-bold border-b-2 flex items-center gap-2 transition-colors cursor-pointer ${
+            activeTab === 'warehouses'
+              ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+              : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+          }`}
+        >
+          <Warehouse className="w-4 h-4" />
+          <span>كشف حساب وأرصدة المخازن</span>
+          <span className="font-mono text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
+            {allWarehousesList.length}
+          </span>
+        </button>
       </div>
 
       {/* TAB 1: General Append-Only Ledger */}
@@ -471,7 +530,7 @@ export const GeneralLedgerPage: React.FC = () => {
 
               {/* Custody Filter (Admin) */}
               {isAdmin && (
-                <div className="min-w-[160px]">
+                <div className="min-w-[150px]">
                   <select
                     value={selectedCustody}
                     onChange={(e) => setSelectedCustody(e.target.value)}
@@ -486,6 +545,22 @@ export const GeneralLedgerPage: React.FC = () => {
                   </select>
                 </div>
               )}
+
+              {/* Warehouse Filter */}
+              <div className="min-w-[150px]">
+                <select
+                  value={selectedWarehouse}
+                  onChange={(e) => setSelectedWarehouse(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-semibold"
+                >
+                  <option value="all">كافة المخازن ({allWarehousesList.length})</option>
+                  {allWarehousesList.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name} {w.is_main ? '(رئيسي)' : w.is_general ? '(عام)' : '(فرعي)'}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               {/* Movement Type Filter */}
               <div className="min-w-[140px]">
@@ -906,6 +981,261 @@ export const GeneralLedgerPage: React.FC = () => {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* TAB 3: Warehouse Accounts & Balances Statement */}
+      {activeTab === 'warehouses' && (
+        <div className="space-y-5">
+          {/* Warehouse Selector & Controls Bar */}
+          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 no-print">
+            <div className="flex-1 max-w-md">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                اختر المخزن لعرض كشف حسابه وأرصدته التفصيلية:
+              </label>
+              <select
+                value={selectedStatementWhId}
+                onChange={(e) => setSelectedStatementWhId(e.target.value)}
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-bold"
+              >
+                {allWarehousesList.map((wh) => (
+                  <option key={wh.id} value={wh.id}>
+                    {wh.name} {wh.is_main ? '• (المخزن الرئيسي)' : wh.is_general ? '• (مخزن عام)' : '• (فرعي)'} {wh.custody_name ? `[عهدة: ${wh.custody_name}]` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => fetchWarehouseStatement(selectedStatementWhId)}
+                className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>تحديث البيانات</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>طباعة كشف المخزن</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Current Selected Warehouse Info */}
+          {(() => {
+            const currentWh = allWarehousesList.find((w) => String(w.id) === selectedStatementWhId);
+            if (!currentWh) return null;
+
+            return (
+              <div className="space-y-5">
+                {/* KPI Overview Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                    <span className="text-[11px] text-slate-400 font-semibold block">المخزن والتبعية</span>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white mt-1 truncate">
+                      {currentWh.name}
+                    </h3>
+                    <div className="flex gap-1.5 mt-1.5">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                        {currentWh.is_main ? 'رئيسي' : currentWh.is_general ? 'عام' : 'فرعي'}
+                      </span>
+                      {currentWh.custody_name && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                          {currentWh.custody_name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                    <span className="text-[11px] text-slate-400 font-semibold block">الأصناف المخزنة</span>
+                    <h3 className="text-xl font-bold font-mono text-indigo-600 dark:text-indigo-400 mt-1">
+                      {warehouseBalances.length}
+                    </h3>
+                    <p className="text-[10px] text-slate-400 mt-0.5">صنف مختلف له رصيد</p>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                    <span className="text-[11px] text-slate-400 font-semibold block">إجمالي الرصيد الفعلي</span>
+                    <h3 className="text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-1">
+                      {warehouseBalances.reduce((acc, curr) => acc + (curr.quantity || 0), 0).toFixed(3)}
+                    </h3>
+                    <p className="text-[10px] text-slate-400 mt-0.5">وحدة قياس أساسية</p>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                    <span className="text-[11px] text-slate-400 font-semibold block">الرصيد المتاح الحر</span>
+                    <h3 className="text-xl font-bold font-mono text-sky-600 dark:text-sky-400 mt-1">
+                      {warehouseBalances.reduce((acc, curr) => acc + (curr.available_qty || 0), 0).toFixed(3)}
+                    </h3>
+                    <p className="text-[10px] text-amber-500 mt-0.5">
+                      محجوز معلق: {warehouseBalances.reduce((acc, curr) => acc + (curr.reserved_qty || 0), 0).toFixed(3)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Table 1: Current Stock Balances in this Warehouse */}
+                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Warehouse className="w-4 h-4 text-indigo-600" />
+                      <span>جدول أرصدة الأصناف الحالية في مخزن [{currentWh.name}]</span>
+                    </h3>
+                    <span className="text-xs text-slate-400">
+                      عدد البنود: {warehouseBalances.length}
+                    </span>
+                  </div>
+
+                  {warehouseBalances.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl space-y-1">
+                      <p className="text-xs font-semibold">لا توجد أرصدة مخزنية مسجلة في هذا المخزن حالياً</p>
+                      <p className="text-[11px] text-slate-400">يمكنك تسجيل وارد خارجي أو تحويل داخلي لهذا المخزن من شاشة العمليات المخزنية.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 border-y border-slate-200 dark:border-slate-800">
+                          <tr>
+                            <th className="py-2.5 px-3">كود الصنف</th>
+                            <th className="py-2.5 px-3">اسم الصنف</th>
+                            <th className="py-2.5 px-3">التصنيف</th>
+                            <th className="py-2.5 px-3 text-center">الرصيد الفعلي</th>
+                            <th className="py-2.5 px-3 text-center">المحجوز معلق</th>
+                            <th className="py-2.5 px-3 text-center">المتاح الحر</th>
+                            <th className="py-2.5 px-3">الوحدة</th>
+                            <th className="py-2.5 px-3 text-center">حد الأمان</th>
+                            <th className="py-2.5 px-3 text-center">الحالة</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                          {warehouseBalances.map((b) => (
+                            <tr key={b.item_id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                              <td className="py-2.5 px-3 font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                                {b.item_code}
+                              </td>
+                              <td className="py-2.5 px-3 font-semibold text-slate-900 dark:text-white">
+                                {b.item_name}
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-500">
+                                {b.category_name}
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-900 dark:text-white">
+                                {b.quantity}
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-mono font-bold text-amber-600">
+                                {b.reserved_qty > 0 ? b.reserved_qty : '0'}
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                                {b.available_qty}
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-500">
+                                {b.unit_name || b.unit_symbol}
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-mono text-slate-400">
+                                {b.min_limit}
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                {b.is_low_stock ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                                    دون حد الأمان
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                    رصيد آمن
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Table 2: Warehouse Movements History */}
+                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <FileSpreadsheet className="w-4 h-4 text-indigo-600" />
+                      <span>سجل حركات وقيود المخزن التحليلي [{currentWh.name}]</span>
+                    </h3>
+                    <span className="text-xs text-slate-400">
+                      عدد الحركات: {warehouseMovements.length}
+                    </span>
+                  </div>
+
+                  {warehouseMovements.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl space-y-1">
+                      <p className="text-xs font-semibold">لم تسجل أي حركات تشغيلية على هذا المخزن بعد</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400 border-y border-slate-200 dark:border-slate-800">
+                          <tr>
+                            <th className="py-2.5 px-3">رقم TRX</th>
+                            <th className="py-2.5 px-3">التاريخ</th>
+                            <th className="py-2.5 px-3">نوع الحركة</th>
+                            <th className="py-2.5 px-3">الصنف</th>
+                            <th className="py-2.5 px-3">المخزن الآخر</th>
+                            <th className="py-2.5 px-3 text-center">الوارد (+)</th>
+                            <th className="py-2.5 px-3 text-center">المنصرف (-)</th>
+                            <th className="py-2.5 px-3">الحالة</th>
+                            <th className="py-2.5 px-3">المنفذ والملاحظات</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono">
+                          {warehouseMovements.map((wm) => (
+                            <tr key={wm.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                              <td className="py-2.5 px-3 font-bold text-indigo-600 dark:text-indigo-400">
+                                {wm.trx_number}
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-500 font-sans text-[11px]">
+                                {new Date(wm.created_at).toLocaleDateString('ar-EG')}
+                              </td>
+                              <td className="py-2.5 px-3 font-sans">
+                                {getTypeBadge(wm.movement_type)}
+                              </td>
+                              <td className="py-2.5 px-3 font-sans">
+                                <div className="font-semibold text-slate-900 dark:text-white">{wm.item_name}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">{wm.item_code}</div>
+                              </td>
+                              <td className="py-2.5 px-3 font-sans text-slate-600 dark:text-slate-300">
+                                {wm.direction === 'in'
+                                  ? `من: ${wm.source_warehouse_name}`
+                                  : wm.direction === 'out'
+                                  ? `إلى: ${wm.target_warehouse_name}`
+                                  : '—'}
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-bold text-emerald-600 dark:text-emerald-400">
+                                {wm.direction === 'in' ? `+${wm.quantity}` : '—'}
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-bold text-rose-600 dark:text-rose-400">
+                                {wm.direction === 'out' ? `-${wm.quantity}` : '—'}
+                              </td>
+                              <td className="py-2.5 px-3 font-sans">
+                                {getStatusBadge(wm.status)}
+                              </td>
+                              <td className="py-2.5 px-3 font-sans text-[11px] text-slate-500">
+                                <div>{wm.creator_name || wm.creator_code}</div>
+                                {wm.notes && <div className="text-[10px] text-slate-400 truncate max-w-xs">{wm.notes}</div>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
