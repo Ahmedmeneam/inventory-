@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { db, sqlite } from '../db/index.ts';
-import { units, categories, items, custodyItems, itemProposals, custodies, stockBalances, auditLogs } from '../db/schema.ts';
+import { units, categories, items, custodyItems, itemProposals, custodies, stockBalances, auditLogs, notifications, users } from '../db/schema.ts';
 import { eq, and, sql } from 'drizzle-orm';
 import { toMilli, fromMilli } from '../../utils/rules.ts';
 
@@ -358,7 +358,13 @@ itemsRouter.post('/custodies/:id/items', async (req: Request, res: Response) => 
 itemsRouter.post('/custodies/:id/items/create', async (req: Request, res: Response) => {
   try {
     const custodyId = Number(req.params.id);
-    const { name, categoryId, unitId, minLimit, customCode } = req.body;
+    const { name, categoryId, unitId, minLimit, customCode, userId } = req.body;
+
+    const creator = userId ? db.select().from(users).where(eq(users.id, Number(userId))).get() : null;
+    if (creator?.role === 'storekeeper') {
+      res.status(403).json({ error: 'صلاحية مرفوضة: لا يملك أمين العهدة صلاحية إنشاء صنف جديد مباشرة. يرجى تقديم مقترح صنف ليعتمده رئيس القسم.' });
+      return;
+    }
 
     if (!name || !categoryId || !unitId) {
       res.status(400).json({ error: 'يرجى استكمال البيانات الإلزامية للصنف (الاسم، التصنيف، الوحدة)' });
@@ -551,6 +557,20 @@ itemsRouter.post('/custodies/:id/proposals', async (req: Request, res: Response)
       .returning()
       .get();
 
+    // Send notification to supervisor
+    const userObj = userId ? db.select().from(users).where(eq(users.id, Number(userId))).get() : null;
+    db.insert(notifications).values({
+      custodyId,
+      targetRole: 'supervisor',
+      targetUserId: null,
+      title: 'مقترح صنف جديد بانتظار الاعتماد',
+      message: `قام أمين العهدة (${userObj?.fullName || 'أمين العهدة'}) باقتراح صنف جديد: (${suggestedName.trim()}) بانتظار مراجعتك واعتماده.`,
+      linkTab: 'items',
+      relatedId: newProposal.id,
+      isRead: false,
+      createdAt: new Date().toISOString(),
+    }).run();
+
     res.json({
       success: true,
       message: 'تم رفع مقترح الصنف بنجاح وبانتظار اعتماد رئيس القسم',
@@ -567,6 +587,13 @@ itemsRouter.post('/proposals/:id/approve', async (req: Request, res: Response) =
   try {
     const proposalId = Number(req.params.id);
     const { supervisorUserId } = req.body;
+
+    // Check authority: Storekeeper cannot approve
+    const reviewer = supervisorUserId ? db.select().from(users).where(eq(users.id, Number(supervisorUserId))).get() : null;
+    if (reviewer?.role === 'storekeeper') {
+      res.status(403).json({ error: 'صلاحية مرفوضة: لا يملك أمين العهدة صلاحية اعتماد مقترحات الأصناف.' });
+      return;
+    }
 
     const proposal = db.select().from(itemProposals).where(eq(itemProposals.id, proposalId)).get();
     if (!proposal || proposal.status !== 'pending') {
@@ -619,6 +646,19 @@ itemsRouter.post('/proposals/:id/approve', async (req: Request, res: Response) =
         .where(eq(itemProposals.id, proposal.id))
         .run();
 
+      // Send notification to storekeeper
+      db.insert(notifications).values({
+        custodyId: proposal.custodyId,
+        targetRole: 'storekeeper',
+        targetUserId: proposal.createdBy,
+        title: 'تمت الموافقة على مقترح الصنف',
+        message: `وافق رئيس القسم على مقترح الصنف (${proposal.suggestedName}) وتم إدراجه بالكود (${newItem.itemCode}).`,
+        linkTab: 'items',
+        relatedId: newItem.id,
+        isRead: false,
+        createdAt: now,
+      }).run();
+
       return newItem;
     });
 
@@ -646,25 +686,46 @@ itemsRouter.post('/proposals/:id/reject', async (req: Request, res: Response) =>
       return;
     }
 
+    // Check authority: Storekeeper cannot reject
+    const reviewer = supervisorUserId ? db.select().from(users).where(eq(users.id, Number(supervisorUserId))).get() : null;
+    if (reviewer?.role === 'storekeeper') {
+      res.status(403).json({ error: 'صلاحية مرفوضة: لا يملك أمين العهدة صلاحية رفض مقترحات الأصناف.' });
+      return;
+    }
+
     const proposal = db.select().from(itemProposals).where(eq(itemProposals.id, proposalId)).get();
     if (!proposal || proposal.status !== 'pending') {
       res.status(400).json({ error: 'المقترح غير متاح للرفض' });
       return;
     }
 
+    const now = new Date().toISOString();
     db.update(itemProposals)
       .set({
         status: 'rejected',
         rejectionReason: reason.trim(),
         reviewedBy: supervisorUserId ? Number(supervisorUserId) : null,
-        reviewedAt: new Date().toISOString(),
+        reviewedAt: now,
       })
       .where(eq(itemProposals.id, proposalId))
       .run();
 
-    res.json({ success: true, message: 'تم رفض مقترح الصنف وتسجيل السبب' });
+    // Send notification to storekeeper
+    db.insert(notifications).values({
+      custodyId: proposal.custodyId,
+      targetRole: 'storekeeper',
+      targetUserId: proposal.createdBy,
+      title: 'تم رفض مقترح الصنف',
+      message: `رفض رئيس القسم مقترح الصنف (${proposal.suggestedName}). السبب: ${reason.trim()}`,
+      linkTab: 'items',
+      relatedId: proposal.id,
+      isRead: false,
+      createdAt: now,
+    }).run();
+
+    res.json({ success: true, message: 'تم رفض مقترح الصنف وإشعار أمين العهدة' });
   } catch (error) {
     console.error('Error rejecting proposal:', error);
-    res.status(500).json({ error: 'فشل رفض المقترح' });
+    res.status(500).json({ error: 'فشل رفض مقترح الصنف' });
   }
 });

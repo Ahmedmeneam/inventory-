@@ -36,30 +36,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const isSupervisor = user?.role === 'supervisor';
+  const isStorekeeper = user?.role === 'storekeeper';
 
   const adminNav = [
-    { id: 'dashboard', label: 'لوحة التحكم', icon: LayoutDashboard },
+    { id: 'dashboard', label: 'لوحة التحكم المركزية', icon: LayoutDashboard },
     { id: 'custodies', label: 'الهيكل التنظيمي والعهد والمخازن', icon: Building },
     { id: 'users', label: 'إدارة الحسابات والأمان', icon: Users },
     { id: 'items', label: 'كتالوج الأصناف المركزي', icon: Boxes },
-    { id: 'settings', label: 'إعدادات الحساب والنظام', icon: Shield },
     { id: 'inventory', label: 'الجرد الدوري والإقفال السنوي', icon: Layers },
     { id: 'ledger', label: 'السجل العام وكشوف الحساب', icon: FileSpreadsheet },
     { id: 'backup', label: 'النسخ الاحتياطي والاستعادة', icon: Database },
+    { id: 'settings', label: 'إعدادات الحساب والنظام', icon: Shield },
   ];
 
-  const custodyNav = [
-    { id: 'dashboard', label: 'لوحة متابعة العهدة', icon: LayoutDashboard },
-    { id: 'items', label: 'أصناف العهدة والمقترحات', icon: Boxes },
-    { id: 'movements', label: 'العمليات المخزنية', icon: ArrowRightLeft },
-    { id: 'pending', label: 'الطلبات المعلقة والمراجعة', icon: ClipboardCheck },
-    { id: 'delegation', label: 'قواعد ومراجعة التفويض', icon: Shield },
-    { id: 'settings', label: 'إعدادات الحساب', icon: Users },
+  const supervisorNav = [
+    { id: 'dashboard', label: 'لوحة متابعة ورقابة العهدة', icon: LayoutDashboard },
+    { id: 'pending', label: 'الطلبات المعلقة والاعتمادات', icon: ClipboardCheck },
+    { id: 'items', label: 'أصناف العهدة واعتماد المقترحات', icon: Boxes },
+    { id: 'movements', label: 'العمليات المخزنية والرقابة', icon: ArrowRightLeft },
+    { id: 'delegation', label: 'ضبط قواعد وسقوف التفويض', icon: Shield },
     { id: 'inventory', label: 'الجرد الدوري والتسويات', icon: Layers },
-    { id: 'ledger', label: 'كشوف الحساب والإقفال', icon: FileSpreadsheet },
+    { id: 'ledger', label: 'كشوف الحساب وسجل حركات العهدة', icon: FileSpreadsheet },
+    { id: 'settings', label: 'إعدادات الحساب', icon: Users },
   ];
 
-  const navItems = isAdmin ? adminNav : custodyNav;
+  const storekeeperNav = [
+    { id: 'dashboard', label: 'لوحة متابعة العهدة الميدانية', icon: LayoutDashboard },
+    { id: 'movements', label: 'تسجيل العمليات (إضافة / خصم / تحويل)', icon: ArrowRightLeft },
+    { id: 'pending', label: 'طلباتي المعلقة وحالة الاعتماد', icon: ClipboardCheck },
+    { id: 'items', label: 'أصناف العهدة واقتراح صنف جديد', icon: Boxes },
+    { id: 'inventory', label: 'إدخال العد الفعلي للجرد', icon: Layers },
+    { id: 'settings', label: 'إعدادات الحساب الشخصي', icon: Users },
+  ];
+
+  const navItems = isAdmin ? adminNav : isSupervisor ? supervisorNav : storekeeperNav;
 
   const content = (
     <div className="flex flex-col h-full bg-slate-900 text-slate-300">

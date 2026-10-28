@@ -14,7 +14,9 @@ import {
   ShieldAlert,
   Phone,
   Check,
+  RotateCcw,
 } from 'lucide-react';
+import { FactoryResetModal } from '../components/common/FactoryResetModal.tsx';
 
 interface LoginPageProps {
   companyName?: string;
@@ -29,6 +31,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ companyName = 'إدارة 
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
 
   // Mandatory first login password change modal
   const [pendingUser, setPendingUser] = useState<any | null>(null);
@@ -234,12 +237,33 @@ export const LoginPage: React.FC<LoginPageProps> = ({ companyName = 'إدارة 
           </button>
         </form>
 
-        <div className="pt-2 text-center border-t border-slate-100 dark:border-slate-800">
+        <div className="pt-2 text-center border-t border-slate-100 dark:border-slate-800 space-y-2">
           <p className="text-[11px] text-slate-400 leading-relaxed">
             * يدعم التنقل السريع بلوحة المفاتيح عبر زر Tab للتبديل و Enter للتنفيذ.
           </p>
+
+          <button
+            type="button"
+            onClick={() => setIsResetModalOpen(true)}
+            className="inline-flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 font-semibold transition-colors cursor-pointer pt-1"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>تهيئة النظام لشركة جديدة أو إعادة ضبط المصنع</span>
+          </button>
         </div>
       </div>
+
+      {/* Factory Reset Modal */}
+      <FactoryResetModal
+        isOpen={isResetModalOpen}
+        onClose={() => setIsResetModalOpen(false)}
+        onResetSuccess={() => {
+          setIsResetModalOpen(false);
+          window.location.reload();
+        }}
+        companyName={companyName}
+        showAdminPasswordOption={true}
+      />
 
       {/* Mandatory First-Time Password Change Modal */}
       {pendingUser && (

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
 import { validatePasswordStrength } from '../utils/rules.ts';
-import { ShieldCheck, Building2, User, Mail, Lock, Check, AlertCircle, ArrowLeft, Sparkles } from 'lucide-react';
+import { ShieldCheck, Building2, User, Mail, Lock, Check, AlertCircle, ArrowLeft, Sparkles, RotateCcw, LogIn } from 'lucide-react';
+import { FactoryResetModal } from '../components/common/FactoryResetModal.tsx';
 
 interface SetupWizardPageProps {
   onSetupSuccess: (companyName: string) => void;
@@ -16,6 +17,7 @@ export const SetupWizardPage: React.FC<SetupWizardPageProps> = ({ onSetupSuccess
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
 
   // Live password validation criteria
   const hasMinLength = password.length >= 8;
@@ -91,9 +93,31 @@ export const SetupWizardPage: React.FC<SetupWizardPageProps> = ({ onSetupSuccess
         {/* Wizard Form */}
         <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-5 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
           {error && (
-            <div className="flex items-center gap-2 p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60 text-xs font-medium">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{error}</span>
+            <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 text-xs space-y-3">
+              <div className="flex items-center gap-2 font-bold">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{error}</span>
+              </div>
+              {error.includes('مهيأ بالفعل') && (
+                <div className="pt-2 border-t border-rose-200/60 dark:border-rose-900/60 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.location.reload()}
+                    className="px-3.5 py-1.5 rounded-xl bg-indigo-600 text-white font-bold text-xs flex items-center gap-1.5 hover:bg-indigo-700 transition-colors cursor-pointer"
+                  >
+                    <LogIn className="w-3.5 h-3.5" />
+                    <span>الانتقال لشاشة تسجيل الدخول</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsResetModalOpen(true)}
+                    className="px-3.5 py-1.5 rounded-xl bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5 hover:bg-rose-700 transition-colors cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>تصفير النظام لشركة جديدة (إعادة ضبط المصنع)</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -256,9 +280,31 @@ export const SetupWizardPage: React.FC<SetupWizardPageProps> = ({ onSetupSuccess
             <p className="text-[11px] text-slate-400 text-center mt-2">
               * يُقفل هذا المعالج نهائياً بعد الحفظ لضمان سلامة وأمان النظام
             </p>
+
+            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-center">
+              <button
+                type="button"
+                onClick={() => setIsResetModalOpen(true)}
+                className="inline-flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 font-semibold transition-colors cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>هل ترغب في إعادة ضبط المصنع ومسح أي بيانات لتأسيس شركة أخرى؟</span>
+              </button>
+            </div>
           </div>
         </form>
       </div>
+
+      {/* Factory Reset Modal */}
+      <FactoryResetModal
+        isOpen={isResetModalOpen}
+        onClose={() => setIsResetModalOpen(false)}
+        onResetSuccess={() => {
+          setIsResetModalOpen(false);
+          window.location.reload();
+        }}
+        showAdminPasswordOption={false}
+      />
     </div>
   );
 };

@@ -10,6 +10,7 @@ import {
   units,
   users,
   auditLogs,
+  notifications,
 } from '../db/schema.ts';
 import { eq, and, sql, desc, count } from 'drizzle-orm';
 import { toMilli, fromMilli, formatTrxNumber, evaluateDelegationRule } from '../../utils/rules.ts';
@@ -345,48 +346,41 @@ movementsRouter.post('/:id/movements/add', async (req: Request, res: Response) =
       return;
     }
 
-    // Atomic transaction: create movement, update stock, lock initial import permanently
+    const userObj = userId ? db.select().from(users).where(eq(users.id, Number(userId))).get() : null;
+    const isStorekeeper = userObj?.role === 'storekeeper';
+    const isPending = isStorekeeper; // Storekeeper additions require supervisor approval
+
+    // Atomic transaction: create movement, update stock (if direct), lock initial import permanently
     const transaction = sqlite.transaction(() => {
       const now = new Date().toISOString();
       const trxNumber = getNextTrxNumber();
 
-      // 1. Insert Movement
+      // 1. Insert Movement (pending_approval if storekeeper, executed if supervisor/admin)
       const newMovement = db
         .insert(movements)
         .values({
           trxNumber,
           custodyId,
           movementType: 'addition',
-          status: 'executed',
+          status: isPending ? 'pending_approval' : 'executed',
           sourceWarehouseId: null,
           targetWarehouseId: targetWh.id,
           itemId: Number(itemId),
           quantityMilli: qtyMilli,
-          notes: notes ? notes.trim() : null,
+          notes: notes ? notes.trim() : (isPending ? 'وارد خارجي معلق بانتظار موافقة رئيس القسم' : null),
           createdBy: Number(userId) || 1,
           createdAt: now,
-          approvedBy: Number(userId) || 1,
-          approvedAt: now,
+          approvedBy: isPending ? null : (Number(userId) || 1),
+          approvedAt: isPending ? null : now,
         })
         .returning()
         .get();
 
-      // 2. Update stock balance
-      const existingBalance = db
-        .select()
-        .from(stockBalances)
-        .where(
-          and(
-            eq(stockBalances.custodyId, custodyId),
-            eq(stockBalances.warehouseId, targetWh.id),
-            eq(stockBalances.itemId, Number(itemId))
-          )
-        )
-        .get();
-
-      if (existingBalance) {
-        db.update(stockBalances)
-          .set({ quantityMilli: existingBalance.quantityMilli + qtyMilli })
+      // 2. Update stock balance ONLY if directly executed (supervisor/admin)
+      if (!isPending) {
+        const existingBalance = db
+          .select()
+          .from(stockBalances)
           .where(
             and(
               eq(stockBalances.custodyId, custodyId),
@@ -394,17 +388,44 @@ movementsRouter.post('/:id/movements/add', async (req: Request, res: Response) =
               eq(stockBalances.itemId, Number(itemId))
             )
           )
-          .run();
+          .get();
+
+        if (existingBalance) {
+          db.update(stockBalances)
+            .set({ quantityMilli: existingBalance.quantityMilli + qtyMilli })
+            .where(
+              and(
+                eq(stockBalances.custodyId, custodyId),
+                eq(stockBalances.warehouseId, targetWh.id),
+                eq(stockBalances.itemId, Number(itemId))
+              )
+            )
+            .run();
+        } else {
+          db.insert(stockBalances)
+            .values({
+              custodyId,
+              warehouseId: targetWh.id,
+              itemId: Number(itemId),
+              quantityMilli: qtyMilli,
+              reservedQtyMilli: 0,
+            })
+            .run();
+        }
       } else {
-        db.insert(stockBalances)
-          .values({
-            custodyId,
-            warehouseId: targetWh.id,
-            itemId: Number(itemId),
-            quantityMilli: qtyMilli,
-            reservedQtyMilli: 0,
-          })
-          .run();
+        // Send notification to supervisor of this custody
+        const itemObj = db.select().from(items).where(eq(items.id, Number(itemId))).get();
+        db.insert(notifications).values({
+          custodyId,
+          targetRole: 'supervisor',
+          targetUserId: null,
+          title: 'طلب وارد خارجي جديد بانتظار الاعتماد',
+          message: `قام أمين العهدة (${userObj?.fullName || 'أمين العهدة'}) بتسجيل وارد خارجي للصنف (${itemObj?.name || 'صنف'}) بكمية ${fromMilli(qtyMilli)} بالمخزن الرئيسي. يتطلب موافقتك.`,
+          linkTab: 'pending',
+          relatedId: newMovement.id,
+          isRead: false,
+          createdAt: now,
+        }).run();
       }
 
       // 3. Lock initial import permanently on first operational movement
@@ -413,15 +434,18 @@ movementsRouter.post('/:id/movements/add', async (req: Request, res: Response) =
         .where(eq(custodies.id, custodyId))
         .run();
 
-      return newMovement;
+      return { movement: newMovement, isPending };
     });
 
-    const createdMovement = transaction();
+    const result = transaction();
 
     res.json({
       success: true,
-      message: `تم تسجيل حركة الإضافة بنجاح برقم المعاملة ${createdMovement.trxNumber}`,
-      movement: createdMovement,
+      isPending: result.isPending,
+      message: result.isPending
+        ? `تم تسجيل طلب الوارد الخارجي برقم ${result.movement.trxNumber} وحالته معلقة بانتظار موافقة رئيس القسم (تم إرسال إشعار لرئيس القسم)`
+        : `تم تسجيل حركة الإضافة بنجاح برقم المعاملة ${result.movement.trxNumber} وإضافتها للمخزن الرئيسي`,
+      movement: result.movement,
     });
   } catch (error: any) {
     console.error('Error adding stock:', error);
@@ -557,6 +581,21 @@ movementsRouter.post('/:id/movements/issue', async (req: Request, res: Response)
             )
           )
           .run();
+
+        // Send notification to supervisor
+        const itemObj = db.select().from(items).where(eq(items.id, Number(itemId))).get();
+        const userObj = userId ? db.select().from(users).where(eq(users.id, Number(userId))).get() : null;
+        db.insert(notifications).values({
+          custodyId,
+          targetRole: 'supervisor',
+          targetUserId: null,
+          title: 'طلب خصم مخزني جديد بانتظار الاعتماد',
+          message: `قام أمين العهدة (${userObj?.fullName || 'أمين العهدة'}) برفع طلب خصم للصنف (${itemObj?.name || 'صنف'}) بكمية ${fromMilli(qtyMilli)} من مخزن (${sourceWh.name}). يتطلب موافقتك وحجزت الكمية.`,
+          linkTab: 'pending',
+          relatedId: newMovement.id,
+          isRead: false,
+          createdAt: now,
+        }).run();
       }
 
       // Lock initial import permanently
@@ -644,60 +683,54 @@ movementsRouter.post('/:id/movements/transfer', async (req: Request, res: Respon
       return;
     }
 
+    const userObj = userId ? db.select().from(users).where(eq(users.id, Number(userId))).get() : null;
+    const isStorekeeper = userObj?.role === 'storekeeper';
+    const isPending = isStorekeeper; // Storekeeper transfer requires supervisor approval
+
     // Atomic Transfer Transaction
     const transaction = sqlite.transaction(() => {
       const now = new Date().toISOString();
       const trxNumber = getNextTrxNumber();
 
-      // 1. Create movement (executed immediately by storekeeper)
+      // 1. Create movement
       const newMovement = db
         .insert(movements)
         .values({
           trxNumber,
           custodyId,
           movementType: 'internal_transfer',
-          status: 'executed',
+          status: isPending ? 'pending_approval' : 'executed',
           sourceWarehouseId: sourceWh.id,
           targetWarehouseId: targetWh.id,
           itemId: Number(itemId),
           quantityMilli: qtyMilli,
-          notes: notes ? notes.trim() : null,
+          notes: notes ? notes.trim() : (isPending ? 'تحويل داخلي معلق بانتظار موافقة رئيس القسم' : null),
           createdBy: Number(userId) || 1,
           createdAt: now,
-          approvedBy: Number(userId) || 1,
-          approvedAt: now,
+          approvedBy: isPending ? null : (Number(userId) || 1),
+          approvedAt: isPending ? null : now,
         })
         .returning()
         .get();
 
-      // 2. Decrement source warehouse
-      db.update(stockBalances)
-        .set({ quantityMilli: currentQtyMilli - qtyMilli })
-        .where(
-          and(
-            eq(stockBalances.custodyId, custodyId),
-            eq(stockBalances.warehouseId, sourceWh.id),
-            eq(stockBalances.itemId, Number(itemId))
-          )
-        )
-        .run();
-
-      // 3. Increment target warehouse
-      const targetBal = db
-        .select()
-        .from(stockBalances)
-        .where(
-          and(
-            eq(stockBalances.custodyId, custodyId),
-            eq(stockBalances.warehouseId, targetWh.id),
-            eq(stockBalances.itemId, Number(itemId))
-          )
-        )
-        .get();
-
-      if (targetBal) {
+      if (!isPending) {
+        // Direct execution (supervisor/admin)
+        // Decrement source warehouse
         db.update(stockBalances)
-          .set({ quantityMilli: targetBal.quantityMilli + qtyMilli })
+          .set({ quantityMilli: currentQtyMilli - qtyMilli })
+          .where(
+            and(
+              eq(stockBalances.custodyId, custodyId),
+              eq(stockBalances.warehouseId, sourceWh.id),
+              eq(stockBalances.itemId, Number(itemId))
+            )
+          )
+          .run();
+
+        // Increment target warehouse
+        const targetBal = db
+          .select()
+          .from(stockBalances)
           .where(
             and(
               eq(stockBalances.custodyId, custodyId),
@@ -705,17 +738,56 @@ movementsRouter.post('/:id/movements/transfer', async (req: Request, res: Respon
               eq(stockBalances.itemId, Number(itemId))
             )
           )
-          .run();
+          .get();
+
+        if (targetBal) {
+          db.update(stockBalances)
+            .set({ quantityMilli: targetBal.quantityMilli + qtyMilli })
+            .where(
+              and(
+                eq(stockBalances.custodyId, custodyId),
+                eq(stockBalances.warehouseId, targetWh.id),
+                eq(stockBalances.itemId, Number(itemId))
+              )
+            )
+            .run();
+        } else {
+          db.insert(stockBalances)
+            .values({
+              custodyId,
+              warehouseId: targetWh.id,
+              itemId: Number(itemId),
+              quantityMilli: qtyMilli,
+              reservedQtyMilli: 0,
+            })
+            .run();
+        }
       } else {
-        db.insert(stockBalances)
-          .values({
-            custodyId,
-            warehouseId: targetWh.id,
-            itemId: Number(itemId),
-            quantityMilli: qtyMilli,
-            reservedQtyMilli: 0,
-          })
+        // Storekeeper: Reserve stock in source warehouse to prevent double-spending
+        db.update(stockBalances)
+          .set({ reservedQtyMilli: reservedMilli + qtyMilli })
+          .where(
+            and(
+              eq(stockBalances.custodyId, custodyId),
+              eq(stockBalances.warehouseId, sourceWh.id),
+              eq(stockBalances.itemId, Number(itemId))
+            )
+          )
           .run();
+
+        // Send notification to supervisor
+        const itemObj = db.select().from(items).where(eq(items.id, Number(itemId))).get();
+        db.insert(notifications).values({
+          custodyId,
+          targetRole: 'supervisor',
+          targetUserId: null,
+          title: 'طلب تحويل داخلي جديد بانتظار الاعتماد',
+          message: `قام أمين العهدة (${userObj?.fullName || 'أمين العهدة'}) بطلب تحويل داخلي للصنف (${itemObj?.name || 'صنف'}) بكمية ${fromMilli(qtyMilli)} من (${sourceWh.name}) إلى (${targetWh.name}).`,
+          linkTab: 'pending',
+          relatedId: newMovement.id,
+          isRead: false,
+          createdAt: now,
+        }).run();
       }
 
       // Lock initial import
@@ -724,15 +796,18 @@ movementsRouter.post('/:id/movements/transfer', async (req: Request, res: Respon
         .where(eq(custodies.id, custodyId))
         .run();
 
-      return newMovement;
+      return { movement: newMovement, isPending };
     });
 
     const result = transaction();
 
     res.json({
       success: true,
-      message: `تم تنفيذ التحويل الداخلي بنجاح برقم ${result.trxNumber}`,
-      movement: result,
+      isPending: result.isPending,
+      message: result.isPending
+        ? `تم تسجيل طلب التحويل الداخلي برقم ${result.movement.trxNumber} وحجز الكمية بمخزن المصدر لحين موافقة رئيس القسم`
+        : `تم تنفيذ التحويل الداخلي بنجاح برقم ${result.movement.trxNumber}`,
+      movement: result.movement,
     });
   } catch (error: any) {
     console.error('Error executing transfer:', error);
@@ -829,6 +904,21 @@ movementsRouter.post('/:id/movements/disposal', async (req: Request, res: Respon
         .where(eq(custodies.id, custodyId))
         .run();
 
+      // Send notification to supervisor
+      const itemObj = db.select().from(items).where(eq(items.id, Number(itemId))).get();
+      const userObj = userId ? db.select().from(users).where(eq(users.id, Number(userId))).get() : null;
+      db.insert(notifications).values({
+        custodyId,
+        targetRole: 'supervisor',
+        targetUserId: null,
+        title: 'طلب خروج نهائي (إتلاف/تكهين) جديد',
+        message: `قام أمين العهدة (${userObj?.fullName || 'أمين العهدة'}) برفع طلب خروج نهائي للصنف (${itemObj?.name || 'صنف'}) بكمية ${fromMilli(qtyMilli)} من مخزن (${sourceWh.name}). يتطلب موافقتك وحجزت الكمية.`,
+        linkTab: 'pending',
+        relatedId: newMovement.id,
+        isRead: false,
+        createdAt: now,
+      }).run();
+
       return newMovement;
     });
 
@@ -847,11 +937,18 @@ movementsRouter.post('/:id/movements/disposal', async (req: Request, res: Respon
 
 // =================== PENDING MOVEMENTS APPROVAL & REJECTION ===================
 
-// POST /api/movements/:id/approve - Supervisor Approves (deducts actual qty and unreserves)
+// POST /api/movements/:id/approve - Supervisor Approves
 movementsRouter.post('/:id/approve', async (req: Request, res: Response) => {
   try {
     const movementId = Number(req.params.id);
     const { supervisorUserId } = req.body;
+
+    // Check authority: Storekeeper cannot approve!
+    const approver = supervisorUserId ? db.select().from(users).where(eq(users.id, Number(supervisorUserId))).get() : null;
+    if (approver?.role === 'storekeeper') {
+      res.status(403).json({ error: 'صلاحية مرفوضة: لا يملك أمين العهدة صلاحية الاعتماد. الاعتماد محصور برئيس القسم ومسؤول النظام.' });
+      return;
+    }
 
     const mov = db.select().from(movements).where(eq(movements.id, movementId)).get();
     if (!mov || mov.status !== 'pending_approval') {
@@ -872,25 +969,48 @@ movementsRouter.post('/:id/approve', async (req: Request, res: Response) => {
         .where(eq(movements.id, mov.id))
         .run();
 
-      // 2. Deduct from actual stock AND remove reservation
-      const bal = db
-        .select()
-        .from(stockBalances)
-        .where(
-          and(
-            eq(stockBalances.custodyId, mov.custodyId),
-            eq(stockBalances.warehouseId, mov.sourceWarehouseId!),
-            eq(stockBalances.itemId, mov.itemId)
+      // 2. Handle stock balances depending on movement type
+      if (mov.movementType === 'addition') {
+        // Increment actual stock in target warehouse (the main warehouse)
+        const targetBal = db
+          .select()
+          .from(stockBalances)
+          .where(
+            and(
+              eq(stockBalances.custodyId, mov.custodyId),
+              eq(stockBalances.warehouseId, mov.targetWarehouseId!),
+              eq(stockBalances.itemId, mov.itemId)
+            )
           )
-        )
-        .get();
+          .get();
 
-      if (bal) {
-        db.update(stockBalances)
-          .set({
-            quantityMilli: bal.quantityMilli - mov.quantityMilli,
-            reservedQtyMilli: Math.max(0, bal.reservedQtyMilli - mov.quantityMilli),
-          })
+        if (targetBal) {
+          db.update(stockBalances)
+            .set({ quantityMilli: targetBal.quantityMilli + mov.quantityMilli })
+            .where(
+              and(
+                eq(stockBalances.custodyId, mov.custodyId),
+                eq(stockBalances.warehouseId, mov.targetWarehouseId!),
+                eq(stockBalances.itemId, mov.itemId)
+              )
+            )
+            .run();
+        } else {
+          db.insert(stockBalances)
+            .values({
+              custodyId: mov.custodyId,
+              warehouseId: mov.targetWarehouseId!,
+              itemId: mov.itemId,
+              quantityMilli: mov.quantityMilli,
+              reservedQtyMilli: 0,
+            })
+            .run();
+        }
+      } else if (mov.movementType === 'internal_transfer') {
+        // Decrement and unreserve in source warehouse
+        const srcBal = db
+          .select()
+          .from(stockBalances)
           .where(
             and(
               eq(stockBalances.custodyId, mov.custodyId),
@@ -898,16 +1018,110 @@ movementsRouter.post('/:id/approve', async (req: Request, res: Response) => {
               eq(stockBalances.itemId, mov.itemId)
             )
           )
-          .run();
+          .get();
+
+        if (srcBal) {
+          db.update(stockBalances)
+            .set({
+              quantityMilli: srcBal.quantityMilli - mov.quantityMilli,
+              reservedQtyMilli: Math.max(0, srcBal.reservedQtyMilli - mov.quantityMilli),
+            })
+            .where(
+              and(
+                eq(stockBalances.custodyId, mov.custodyId),
+                eq(stockBalances.warehouseId, mov.sourceWarehouseId!),
+                eq(stockBalances.itemId, mov.itemId)
+              )
+            )
+            .run();
+        }
+
+        // Increment in target warehouse
+        const tgtBal = db
+          .select()
+          .from(stockBalances)
+          .where(
+            and(
+              eq(stockBalances.custodyId, mov.custodyId),
+              eq(stockBalances.warehouseId, mov.targetWarehouseId!),
+              eq(stockBalances.itemId, mov.itemId)
+            )
+          )
+          .get();
+
+        if (tgtBal) {
+          db.update(stockBalances)
+            .set({ quantityMilli: tgtBal.quantityMilli + mov.quantityMilli })
+            .where(
+              and(
+                eq(stockBalances.custodyId, mov.custodyId),
+                eq(stockBalances.warehouseId, mov.targetWarehouseId!),
+                eq(stockBalances.itemId, mov.itemId)
+              )
+            )
+            .run();
+        } else {
+          db.insert(stockBalances)
+            .values({
+              custodyId: mov.custodyId,
+              warehouseId: mov.targetWarehouseId!,
+              itemId: mov.itemId,
+              quantityMilli: mov.quantityMilli,
+              reservedQtyMilli: 0,
+            })
+            .run();
+        }
+      } else {
+        // Issue or Disposal: Deduct from actual stock AND remove reservation
+        const bal = db
+          .select()
+          .from(stockBalances)
+          .where(
+            and(
+              eq(stockBalances.custodyId, mov.custodyId),
+              eq(stockBalances.warehouseId, mov.sourceWarehouseId!),
+              eq(stockBalances.itemId, mov.itemId)
+            )
+          )
+          .get();
+
+        if (bal) {
+          db.update(stockBalances)
+            .set({
+              quantityMilli: bal.quantityMilli - mov.quantityMilli,
+              reservedQtyMilli: Math.max(0, bal.reservedQtyMilli - mov.quantityMilli),
+            })
+            .where(
+              and(
+                eq(stockBalances.custodyId, mov.custodyId),
+                eq(stockBalances.warehouseId, mov.sourceWarehouseId!),
+                eq(stockBalances.itemId, mov.itemId)
+              )
+            )
+            .run();
+        }
       }
+
+      // Send in-app notification to the storekeeper who created the request
+      db.insert(notifications).values({
+        custodyId: mov.custodyId,
+        targetRole: 'storekeeper',
+        targetUserId: mov.createdBy,
+        title: `تمت الموافقة على طلبك (${mov.trxNumber})`,
+        message: `وافق رئيس القسم على المعاملة (${mov.trxNumber}) وتم تحديث الأرصدة المخزنية بنجاح.`,
+        linkTab: 'movements',
+        relatedId: mov.id,
+        isRead: false,
+        createdAt: now,
+      }).run();
 
       // Audit log
       db.insert(auditLogs)
         .values({
           userId: supervisorUserId ? Number(supervisorUserId) : null,
-          userCode: 'SUPERVISOR',
+          userCode: approver?.userCode || 'SUPERVISOR',
           action: 'MOVEMENT_APPROVED',
-          details: JSON.stringify({ trxNumber: mov.trxNumber, qtyMilli: mov.quantityMilli }),
+          details: JSON.stringify({ trxNumber: mov.trxNumber, type: mov.movementType, qtyMilli: mov.quantityMilli }),
           createdAt: now,
         })
         .run();
@@ -917,14 +1131,14 @@ movementsRouter.post('/:id/approve', async (req: Request, res: Response) => {
 
     transaction();
 
-    res.json({ success: true, message: `تم اعتماد الطلب ${mov.trxNumber} وخصم الرصيد وفك الحجز بنجاح` });
+    res.json({ success: true, message: `تم اعتماد المعاملة ${mov.trxNumber} وتحديث الأرصدة بنجاح وإرسال إشعار لأمين العهدة` });
   } catch (error: any) {
     console.error('Error approving movement:', error);
     res.status(500).json({ error: error.message || 'فشل اعتماد الطلب' });
   }
 });
 
-// POST /api/movements/:id/reject - Supervisor Rejects (unreserves ONLY, no deduction)
+// POST /api/movements/:id/reject - Supervisor Rejects
 movementsRouter.post('/:id/reject', async (req: Request, res: Response) => {
   try {
     const movementId = Number(req.params.id);
@@ -932,6 +1146,13 @@ movementsRouter.post('/:id/reject', async (req: Request, res: Response) => {
 
     if (!reason || !reason.trim()) {
       res.status(400).json({ error: 'يرجى تسجيل سبب الرفض الإلزامي' });
+      return;
+    }
+
+    // Check authority: Storekeeper cannot reject!
+    const rejecter = supervisorUserId ? db.select().from(users).where(eq(users.id, Number(supervisorUserId))).get() : null;
+    if (rejecter?.role === 'storekeeper') {
+      res.status(403).json({ error: 'صلاحية مرفوضة: لا يملك أمين العهدة صلاحية رفض العمليات. الرفض محصور برئيس القسم ومسؤول النظام.' });
       return;
     }
 
@@ -955,40 +1176,55 @@ movementsRouter.post('/:id/reject', async (req: Request, res: Response) => {
         .where(eq(movements.id, mov.id))
         .run();
 
-      // 2. Unreserve stock ONLY (actual quantity remains intact!)
-      const bal = db
-        .select()
-        .from(stockBalances)
-        .where(
-          and(
-            eq(stockBalances.custodyId, mov.custodyId),
-            eq(stockBalances.warehouseId, mov.sourceWarehouseId!),
-            eq(stockBalances.itemId, mov.itemId)
-          )
-        )
-        .get();
-
-      if (bal) {
-        db.update(stockBalances)
-          .set({
-            reservedQtyMilli: Math.max(0, bal.reservedQtyMilli - mov.quantityMilli),
-          })
+      // 2. Unreserve stock if was reserved (not addition)
+      if (mov.movementType !== 'addition' && mov.sourceWarehouseId) {
+        const bal = db
+          .select()
+          .from(stockBalances)
           .where(
             and(
               eq(stockBalances.custodyId, mov.custodyId),
-              eq(stockBalances.warehouseId, mov.sourceWarehouseId!),
+              eq(stockBalances.warehouseId, mov.sourceWarehouseId),
               eq(stockBalances.itemId, mov.itemId)
             )
           )
-          .run();
+          .get();
+
+        if (bal) {
+          db.update(stockBalances)
+            .set({
+              reservedQtyMilli: Math.max(0, bal.reservedQtyMilli - mov.quantityMilli),
+            })
+            .where(
+              and(
+                eq(stockBalances.custodyId, mov.custodyId),
+                eq(stockBalances.warehouseId, mov.sourceWarehouseId),
+                eq(stockBalances.itemId, mov.itemId)
+              )
+            )
+            .run();
+        }
       }
+
+      // Send notification to storekeeper
+      db.insert(notifications).values({
+        custodyId: mov.custodyId,
+        targetRole: 'storekeeper',
+        targetUserId: mov.createdBy,
+        title: `تم رفض طلبك (${mov.trxNumber})`,
+        message: `رفض رئيس القسم المعاملة (${mov.trxNumber}). سبب الرفض: ${reason.trim()}`,
+        linkTab: 'movements',
+        relatedId: mov.id,
+        isRead: false,
+        createdAt: now,
+      }).run();
 
       return true;
     });
 
     transaction();
 
-    res.json({ success: true, message: `تم رفض الطلب ${mov.trxNumber} وفك حجز الكمية بنجاح وإعادتها للرصيد المتاح` });
+    res.json({ success: true, message: `تم رفض الطلب ${mov.trxNumber} وفك أي حجز للكمية وإرسال إشعار لأمين العهدة` });
   } catch (error: any) {
     console.error('Error rejecting movement:', error);
     res.status(500).json({ error: error.message || 'فشل رفض الطلب' });

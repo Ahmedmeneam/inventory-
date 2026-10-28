@@ -168,15 +168,33 @@ export const PendingMovementsPage: React.FC = () => {
                       {m.trx_number}
                     </td>
                     <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded font-semibold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px]">
-                        {m.movement_type === 'issue' ? 'طلب خصم عادي' : 'طلب خروج نهائي'}
+                      <span className={`px-2 py-0.5 rounded font-semibold text-[10px] ${
+                        m.movement_type === 'addition'
+                          ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300'
+                          : m.movement_type === 'internal_transfer'
+                          ? 'bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300'
+                          : m.movement_type === 'issue'
+                          ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300'
+                          : 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300'
+                      }`}>
+                        {m.movement_type === 'addition'
+                          ? 'طلب وارد خارجي'
+                          : m.movement_type === 'internal_transfer'
+                          ? 'طلب تحويل داخلي'
+                          : m.movement_type === 'issue'
+                          ? 'طلب صرف/خصم'
+                          : 'طلب خروج نهائي'}
                       </span>
                     </td>
                     <td className="py-3 px-3 font-semibold text-slate-900 dark:text-white">
                       {m.item_name} <span className="text-[10px] text-slate-400 font-mono">({m.item_code})</span>
                     </td>
-                    <td className="py-3 px-3 text-slate-500">
-                      {m.source_warehouse_name}
+                    <td className="py-3 px-3 text-slate-600 dark:text-slate-400 text-xs">
+                      {m.movement_type === 'addition'
+                        ? `${m.target_warehouse_name || 'المخزن الرئيسي'} (وجهة الوارد)`
+                        : m.movement_type === 'internal_transfer'
+                        ? `من [${m.source_warehouse_name}] إلى [${m.target_warehouse_name}]`
+                        : m.source_warehouse_name}
                     </td>
                     <td className="py-3 px-3 text-center font-mono font-bold text-amber-600 dark:text-amber-400 text-sm">
                       {m.quantity} {m.unit_symbol}
@@ -188,7 +206,7 @@ export const PendingMovementsPage: React.FC = () => {
                       {m.creator_name} ({m.creator_code})
                     </td>
 
-                    {isSupervisor && (
+                    {isSupervisor ? (
                       <td className="py-3 px-3 text-center">
                         <div className="flex items-center justify-center gap-2">
                           <button
@@ -211,6 +229,13 @@ export const PendingMovementsPage: React.FC = () => {
                             رفض وفك الحجز
                           </button>
                         </div>
+                      </td>
+                    ) : (
+                      <td className="py-3 px-3 text-center">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 text-[11px] font-semibold">
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>بانتظار موافقة رئيس القسم</span>
+                        </span>
                       </td>
                     )}
                   </tr>

@@ -224,6 +224,19 @@ export function initDbSchema() {
       notes TEXT,
       snapshot_json TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      custody_id INTEGER REFERENCES custodies(id),
+      target_role TEXT,
+      target_user_id INTEGER REFERENCES users(id),
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      link_tab TEXT,
+      related_id INTEGER,
+      is_read INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
   `);
 
   // Pre-seed standard measurement units so the user never has to define them manually

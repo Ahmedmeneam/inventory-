@@ -143,3 +143,101 @@ setupRouter.post('/init', async (req: Request, res: Response) => {
     res.status(400).json({ error: error.message || 'فشلت عملية تهيئة النظام' });
   }
 });
+
+// POST /api/setup/factory-reset - Securely reset database to 100% clean state for new company
+setupRouter.post('/factory-reset', async (req: Request, res: Response) => {
+  try {
+    const { confirmationPhrase, adminPassword } = req.body;
+
+    // Check security confirmation
+    const validPhrase = confirmationPhrase && (
+      confirmationPhrase.trim() === 'إعادة ضبط المصنع' ||
+      confirmationPhrase.trim() === 'RESET-FACTORY' ||
+      confirmationPhrase.trim() === 'تصفير النظام'
+    );
+
+    let isAuthorized = false;
+
+    // If confirmation phrase is matched -> authorized
+    if (validPhrase) {
+      isAuthorized = true;
+    } else if (adminPassword) {
+      // Check if admin password is valid for the first admin
+      const adminUser = db.select().from(users).where(eq(users.role, 'admin')).get();
+      if (adminUser && adminUser.passwordHash) {
+        const matches = bcrypt.compareSync(adminPassword, adminUser.passwordHash);
+        if (matches) isAuthorized = true;
+      }
+    }
+
+    if (!isAuthorized) {
+      res.status(403).json({
+        error: 'تصريح غير مقبول: يرجى كتابة عبارة التأكيد "إعادة ضبط المصنع" أو إدخال كلمة مرور مسؤول النظام للتأكيد الأمني.',
+      });
+      return;
+    }
+
+    // Atomic wipe of all application data
+    const transaction = sqlite.transaction(() => {
+      sqlite.exec(`
+        DELETE FROM notifications;
+        DELETE FROM audit_logs;
+        DELETE FROM item_proposals;
+        DELETE FROM inventory_counts;
+        DELETE FROM inventory_sessions;
+        DELETE FROM fiscal_closings;
+        DELETE FROM movements;
+        DELETE FROM delegation_rules;
+        DELETE FROM stock_balances;
+        DELETE FROM custody_items;
+        DELETE FROM items;
+        DELETE FROM categories;
+        DELETE FROM warehouses;
+        DELETE FROM users;
+        DELETE FROM custodies;
+        DELETE FROM company_settings;
+        DELETE FROM sqlite_sequence;
+      `);
+
+      // Re-seed standard units (as per Clean Slate specifications)
+      const standardUnits = [
+        { name: 'قطعة', symbol: 'ق' },
+        { name: 'كرتونة', symbol: 'كرتونة' },
+        { name: 'كيلو جرام', symbol: 'كجم' },
+        { name: 'جرام', symbol: 'جم' },
+        { name: 'طن', symbol: 'طن' },
+        { name: 'متر', symbol: 'م' },
+        { name: 'متر مربع', symbol: 'م²' },
+        { name: 'متر مكعب', symbol: 'م³' },
+        { name: 'لتر', symbol: 'لتر' },
+        { name: 'ملليلتر', symbol: 'مل' },
+        { name: 'علبة', symbol: 'علبة' },
+        { name: 'لفة / رول', symbol: 'لفة' },
+        { name: 'برميل', symbol: 'برميل' },
+        { name: 'شيكارة / كيس', symbol: 'شيكارة' },
+        { name: 'لوح', symbol: 'لوح' },
+        { name: 'دستة', symbol: 'دستة' },
+        { name: 'زوج', symbol: 'زوج' },
+        { name: 'حزمة', symbol: 'حزمة' },
+        { name: 'طقم', symbol: 'طقم' },
+        { name: 'عبوة', symbol: 'عبوة' },
+      ];
+
+      const insertUnit = sqlite.prepare('INSERT OR IGNORE INTO units (name, symbol) VALUES (?, ?)');
+      for (const u of standardUnits) {
+        insertUnit.run(u.name, u.symbol);
+      }
+    });
+
+    transaction();
+
+    res.json({
+      success: true,
+      message: 'تمت إعادة ضبط المصنع وتصفير قاعدة البيانات بالكامل بنجاح. النظام الآن في حالته النظيفة الأصلية وجاهز لمعالج التهيئة لشركة جديدة.',
+    });
+  } catch (error: any) {
+    console.error('Error during factory reset:', error);
+    res.status(500).json({ error: error.message || 'فشلت عملية إعادة ضبط المصنع' });
+  }
+});
+

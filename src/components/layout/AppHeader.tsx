@@ -16,6 +16,9 @@ import {
   Phone,
   LayoutDashboard,
   Lock,
+  CheckCircle2,
+  Bell,
+  Clock,
 } from 'lucide-react';
 
 interface AppHeaderProps {
@@ -36,16 +39,76 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on outside click
+  // In-app notifications state
+  const [notificationsList, setNotificationsList] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  const fetchNotifications = async () => {
+    if (!user) return;
+    try {
+      const res = await fetch(`/api/notifications?role=${user.role}&custodyId=${user.custody_id || ''}&userId=${user.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setNotificationsList(data.notifications || []);
+        setUnreadCount(data.unreadCount || 0);
+      }
+    } catch (err) {
+      console.error('Error fetching notifications:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 8000);
+    return () => clearInterval(interval);
+  }, [user]);
+
+  // Close dropdowns on outside click
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsUserMenuOpen(false);
       }
+      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+        setIsNotifOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const handleNotificationClick = async (notif: any) => {
+    try {
+      await fetch(`/api/notifications/${notif.id}/read`, { method: 'POST' });
+      setNotificationsList((prev) =>
+        prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n))
+      );
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+    } catch (err) {
+      console.error('Error marking as read:', err);
+    }
+
+    setIsNotifOpen(false);
+    if (notif.link_tab && onNavigate) {
+      onNavigate(notif.link_tab);
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await fetch('/api/notifications/mark-all-read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ custodyId: user?.custody_id, role: user?.role }),
+      });
+      setNotificationsList((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      setUnreadCount(0);
+    } catch (err) {
+      console.error('Error marking all as read:', err);
+    }
+  };
 
   const getRoleBadge = (role?: string) => {
     switch (role) {
@@ -103,6 +166,93 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
         {/* Center / Right: Identity Badge, Menu & Actions */}
         <div className="flex items-center gap-2.5">
+          {/* Notifications Popover */}
+          {user && (
+            <div className="relative" ref={notifRef}>
+              <button
+                type="button"
+                onClick={() => setIsNotifOpen((prev) => !prev)}
+                className={`relative p-2 rounded-xl border transition-all cursor-pointer ${
+                  isNotifOpen
+                    ? 'bg-indigo-50/80 dark:bg-slate-800 border-indigo-300 dark:border-indigo-600'
+                    : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+                title="الإشعارات والطلبات المعلقة"
+                aria-label="الإشعارات"
+              >
+                <Bell className="w-4 h-4 text-slate-700 dark:text-slate-300" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center animate-pulse">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {isNotifOpen && (
+                <div className="absolute left-0 mt-2 w-80 sm:w-96 rounded-2xl bg-white dark:bg-slate-900 shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Bell className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      <span className="text-xs font-bold text-slate-900 dark:text-white">
+                        الإشعارات والطلبات
+                      </span>
+                      {unreadCount > 0 && (
+                        <span className="px-1.5 py-0.2 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 font-bold text-[10px]">
+                          {unreadCount} جديد
+                        </span>
+                      )}
+                    </div>
+                    {unreadCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleMarkAllRead}
+                        className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-semibold cursor-pointer"
+                      >
+                        تحديد الكل كمقروء
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                    {notificationsList.length === 0 ? (
+                      <div className="p-6 text-center text-xs text-slate-400">
+                        لا توجد إشعارات جديدة حالياً
+                      </div>
+                    ) : (
+                      notificationsList.map((n) => (
+                        <div
+                          key={n.id}
+                          onClick={() => handleNotificationClick(n)}
+                          className={`p-3 text-right hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer ${
+                            !n.isRead ? 'bg-indigo-50/40 dark:bg-indigo-950/20' : ''
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <span className="text-xs font-bold text-slate-900 dark:text-white">
+                              {n.title}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {new Date(n.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                            {n.message}
+                          </p>
+                          {n.linkTab && (
+                            <div className="mt-1.5 text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold flex items-center gap-1">
+                              <span>اضغط للمراجعة واتخاذ القرار</span>
+                              <span>←</span>
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* User Profile Dropdown Button */}
           {user && (
             <div className="relative" ref={dropdownRef}>

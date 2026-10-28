@@ -176,3 +176,17 @@ export const fiscalClosings = sqliteTable('fiscal_closings', {
   snapshotJson: text('snapshot_json').notNull(),
 });
 
+export const notifications = sqliteTable('notifications', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  custodyId: integer('custody_id').references(() => custodies.id),
+  targetRole: text('target_role'),
+  targetUserId: integer('target_user_id').references(() => users.id),
+  title: text('title').notNull(),
+  message: text('message').notNull(),
+  linkTab: text('link_tab'),
+  relatedId: integer('related_id'),
+  isRead: integer('is_read', { mode: 'boolean' }).notNull().default(false),
+  createdAt: text('created_at').notNull(),
+});
+
+

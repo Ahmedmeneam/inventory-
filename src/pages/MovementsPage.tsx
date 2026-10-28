@@ -252,6 +252,21 @@ export const MovementsPage: React.FC = () => {
 
       {activeTab === 'create' && (
         <div className="space-y-6">
+          {/* Governance Notice for Storekeeper */}
+          {user?.role === 'storekeeper' && (
+            <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 flex items-start gap-3">
+              <Clock className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-xs text-amber-950 dark:text-amber-200 space-y-1">
+                <p className="font-bold">
+                  تنبيه الحوكمة الرقابية (صلاحية أمين العهدة):
+                </p>
+                <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+                  تخضع جميع عمليات الإضافة (الوارد الخارجي)، والتحويل الداخلي، والخصم غير المفوض، والتكهين لرقابة رئيس القسم. يتم تسجيل الطلب معلقاً وحجز الكمية فورياً، مع إرسال إشعار لحظي لرئيس القسم لاتخاذ قرار الاعتماد أو الرفض.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Operation Type Switcher */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <button
@@ -266,7 +281,7 @@ export const MovementsPage: React.FC = () => {
               <div className="flex items-center justify-between mb-2">
                 <PlusCircle className={`w-5 h-5 ${movementMode === 'addition' ? 'text-indigo-600' : 'text-slate-400'}`} />
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
-                  المخزن الرئيسي فقط
+                  {user?.role === 'storekeeper' ? 'طلب معلق للموافقة' : 'المخزن الرئيسي فقط'}
                 </span>
               </div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">إضافة (وارد خارجي)</h3>
@@ -304,7 +319,7 @@ export const MovementsPage: React.FC = () => {
               <div className="flex items-center justify-between mb-2">
                 <Repeat className={`w-5 h-5 ${movementMode === 'transfer' ? 'text-sky-600' : 'text-slate-400'}`} />
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300">
-                  فوري وذري
+                  {user?.role === 'storekeeper' ? 'حجز واعتماد' : 'فوري وذري'}
                 </span>
               </div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-white">تحويل داخلي</h3>
@@ -340,7 +355,19 @@ export const MovementsPage: React.FC = () => {
                 <div className="text-xs text-indigo-950 dark:text-indigo-200 leading-relaxed">
                   <h4 className="font-bold">القاعدة الحاكمة للوارد الخارجي (Rule 3):</h4>
                   <p className="mt-0.5">
-                    الوارد الخارجي يُسجل حصرياً في <strong>المخزن الرئيسي للعهدة</strong>، ويتم توزيعه للمخازن الفرعية عبر <strong>التحويل الداخلي</strong>. تم تعطيل اختيار المخازن الفرعية التزاماً بالمواصفات الفنية المعتمدة.
+                    الوارد الخارجي يُسجل حصرياً في <strong>المخزن الرئيسي للعهدة</strong>، ويتم توزيعه للمخازن الفرعية عبر <strong>التحويل الداخلي</strong>. {user?.role === 'storekeeper' ? 'تُسجل الحركة كطلب معلق بانتظار موافقة رئيس القسم لإضافة الرصيد للمخزن.' : ''}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {movementMode === 'transfer' && user?.role === 'storekeeper' && (
+              <div className="p-4 bg-sky-50/80 dark:bg-sky-950/30 rounded-xl border border-sky-200 dark:border-sky-900/60 flex items-start gap-3">
+                <Info className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
+                <div className="text-xs text-sky-950 dark:text-sky-200 leading-relaxed">
+                  <h4 className="font-bold">حجز الرصيد أثناء طلب التحويل:</h4>
+                  <p className="mt-0.5">
+                    سيتم فورياً حجز الكمية المطلوبة من المخزن المصدر لمنع صرفها في عمليات أخرى، وتظل معلقة لحين موافقة رئيس القسم ليتم ترحيلها إلى المخزن الهدف.
                   </p>
                 </div>
               </div>
@@ -525,13 +552,23 @@ export const MovementsPage: React.FC = () => {
                 >
                   {isSubmitting
                     ? 'جارٍ تنفيذ وتسجيل الحركة...'
+                    : user?.role === 'storekeeper'
+                    ? movementMode === 'addition'
+                      ? 'رفع طلب إذن إضافة وارد (بانتظار موافقة رئيس القسم)'
+                      : movementMode === 'issue'
+                      ? delegationCheck?.badge === 'green'
+                        ? 'تنفيذ إذن الصرف اللحظي (مفوض)'
+                        : 'رفع طلب إذن الصرف (بانتظار موافقة رئيس القسم)'
+                      : movementMode === 'transfer'
+                      ? 'رفع طلب تحويل داخلي (بانتظار موافقة رئيس القسم)'
+                      : 'رفع طلب خروج نهائي / تكهين (بانتظار موافقة رئيس القسم)'
                     : movementMode === 'addition'
                     ? 'تأكيد إضافة الوارد للمخزن الرئيسي'
                     : movementMode === 'issue'
                     ? 'تأكيد تسجيل الخصم'
                     : movementMode === 'transfer'
                     ? 'تأكيد التحويل الداخلي الفوري'
-                    : 'رفع طلب الخروج النهائي'}
+                    : 'تأكيد خروج الصنف نهائياً'}
                 </button>
               </div>
             </form>

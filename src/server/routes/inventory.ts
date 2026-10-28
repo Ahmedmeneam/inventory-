@@ -14,6 +14,7 @@ import {
   auditLogs,
   fiscalClosings,
   custodyItems,
+  notifications,
 } from '../db/schema.ts';
 import { eq, and, desc, asc, sql, sum } from 'drizzle-orm';
 import { fromMilli, toMilli, formatTrxNumber, getFiscalYear } from '../../utils/rules.ts';
@@ -206,6 +207,12 @@ inventoryRouter.post('/sessions', async (req: Request, res: Response) => {
       return;
     }
 
+    const starterUser = userId ? db.select().from(users).where(eq(users.id, Number(userId))).get() : null;
+    if (starterUser?.role === 'storekeeper') {
+      res.status(403).json({ error: 'صلاحية مرفوضة: لا يملك أمين العهدة صلاحية بدء الجرد وتجميد المخزن. هذه الصلاحية محصورة برئيس القسم ومسؤول النظام.' });
+      return;
+    }
+
     // Atomic transaction: freeze warehouse + create session + populate initial counts from current book balance
     const transaction = sqlite.transaction(() => {
       const now = new Date().toISOString();
@@ -285,6 +292,18 @@ inventoryRouter.post('/sessions', async (req: Request, res: Response) => {
           createdAt: now,
         })
         .run();
+
+      // Send notification to storekeeper
+      db.insert(notifications).values({
+        custodyId: cust.id,
+        targetRole: 'storekeeper',
+        title: 'بدء جلسة جرد وتجميد المخزن',
+        message: `بدأ رئيس القسم جلسة جرد للمخزن (${wh.name}) وتم تجميد عملياته، يرجى إدخال أرقام العد الفعلي للأصناف.`,
+        linkTab: 'inventory',
+        relatedId: newSession.id,
+        isRead: false,
+        createdAt: now,
+      }).run();
 
       return newSession;
     });

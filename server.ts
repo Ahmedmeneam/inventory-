@@ -14,6 +14,7 @@ import { movementsRouter } from './src/server/routes/movements.ts';
 import { ledgerRouter } from './src/server/routes/ledger.ts';
 import { inventoryRouter } from './src/server/routes/inventory.ts';
 import { backupRouter } from './src/server/routes/backup.ts';
+import { notificationsRouter } from './src/server/routes/notifications.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,6 +43,7 @@ async function startServer() {
   app.use('/api/ledger', ledgerRouter);
   app.use('/api/inventory', inventoryRouter);
   app.use('/api/backup', backupRouter);
+  app.use('/api/notifications', notificationsRouter);
   app.use('/api', itemsRouter);
 
   // Health check endpoint
