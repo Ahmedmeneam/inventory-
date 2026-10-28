@@ -107,6 +107,10 @@ export const movements = sqliteTable('movements', {
   itemId: integer('item_id').notNull().references(() => items.id),
   quantityMilli: integer('quantity_milli').notNull(),
   notes: text('notes'),
+  receiverName: text('receiver_name'),
+  receiverPhone: text('receiver_phone'),
+  docRef: text('doc_ref'),
+  department: text('department'),
   createdBy: integer('created_by').notNull().references(() => users.id),
   createdAt: text('created_at').notNull(),
   approvedBy: integer('approved_by').references(() => users.id),
@@ -126,6 +130,10 @@ export const inventorySessions = sqliteTable('inventory_sessions', {
   completedAt: text('completed_at'),
   cancellationReason: text('cancellation_reason'),
   notes: text('notes'),
+  receiverName: text('receiver_name'),
+  receiverPhone: text('receiver_phone'),
+  docRef: text('doc_ref'),
+  department: text('department'),
 });
 
 export const inventoryCounts = sqliteTable('inventory_counts', {
@@ -136,6 +144,10 @@ export const inventoryCounts = sqliteTable('inventory_counts', {
   actualQuantityMilli: integer('actual_quantity_milli').notNull(),
   differenceMilli: integer('difference_milli').notNull(),
   notes: text('notes'),
+  receiverName: text('receiver_name'),
+  receiverPhone: text('receiver_phone'),
+  docRef: text('doc_ref'),
+  department: text('department'),
 });
 
 export const itemProposals = sqliteTable('item_proposals', {
@@ -146,6 +158,10 @@ export const itemProposals = sqliteTable('item_proposals', {
   suggestedUnitId: integer('suggested_unit_id').notNull().references(() => units.id),
   minLimitMilli: integer('min_limit_milli').notNull().default(0),
   notes: text('notes'),
+  receiverName: text('receiver_name'),
+  receiverPhone: text('receiver_phone'),
+  docRef: text('doc_ref'),
+  department: text('department'),
   status: text('status', { enum: ['pending', 'approved', 'rejected'] }).notNull().default('pending'),
   rejectionReason: text('rejection_reason'),
   createdBy: integer('created_by').notNull().references(() => users.id),
@@ -173,6 +189,10 @@ export const fiscalClosings = sqliteTable('fiscal_closings', {
   totalQuantityMilli: integer('total_quantity_milli').notNull(),
   status: text('status', { enum: ['closed', 'frozen'] }).notNull().default('closed'),
   notes: text('notes'),
+  receiverName: text('receiver_name'),
+  receiverPhone: text('receiver_phone'),
+  docRef: text('doc_ref'),
+  department: text('department'),
   snapshotJson: text('snapshot_json').notNull(),
 });
 
