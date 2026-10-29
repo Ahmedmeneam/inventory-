@@ -38,6 +38,7 @@ export const InventoryPage: React.FC = () => {
   // Sessions list state
   const [sessionsList, setSessionsList] = useState<any[]>([]);
   const [custodiesList, setCustodiesList] = useState<any[]>([]);
+  const [generalWarehouses, setGeneralWarehouses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Active session details state
@@ -96,6 +97,7 @@ export const InventoryPage: React.FC = () => {
       if (custRes.ok) {
         const cData = await custRes.json();
         setCustodiesList(cData.custodies || []);
+        setGeneralWarehouses(cData.general_warehouses || []);
       }
     } catch (err) {
       console.error('Error fetching inventory sessions:', err);
@@ -374,7 +376,7 @@ export const InventoryPage: React.FC = () => {
 
   // Find warehouses for selected custody in start modal
   const selectedCustodyObj = custodiesList.find((c) => c.id === Number(selectedCustodyId));
-  const availableWarehouses = selectedCustodyObj?.warehouses || [];
+  const availableWarehouses = [...(selectedCustodyObj?.warehouses || []), ...generalWarehouses];
 
   // Differences metrics in active session
   const surplusCount = countedRows.filter((r) => r.difference > 0).length;
