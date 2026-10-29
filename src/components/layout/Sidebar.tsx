@@ -5,7 +5,6 @@ import {
   Building,
   Users,
   Boxes,
-  Ruler,
   ArrowRightLeft,
   ClipboardCheck,
   FileSpreadsheet,
@@ -15,6 +14,7 @@ import {
   ChevronRight,
   Shield,
   Layers,
+  Sliders,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -37,7 +37,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const isSupervisor = user?.role === 'supervisor';
-  const isStorekeeper = user?.role === 'storekeeper';
 
   const adminNav = [
     { id: 'dashboard', label: 'لوحة التحكم المركزية', icon: LayoutDashboard },
@@ -47,7 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'inventory', label: 'الجرد الدوري والإقفال السنوي', icon: Layers },
     { id: 'ledger', label: 'السجل العام وكشوف الحساب', icon: FileSpreadsheet },
     { id: 'backup', label: 'النسخ الاحتياطي والاستعادة', icon: Database },
-    { id: 'settings', label: 'إعدادات الحساب والنظام', icon: Shield },
+    { id: 'settings', label: 'إعدادات الحساب والنظام', icon: Sliders },
   ];
 
   const supervisorNav = [
@@ -58,7 +57,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'delegation', label: 'ضبط قواعد وسقوف التفويض', icon: Shield },
     { id: 'inventory', label: 'الجرد الدوري والتسويات', icon: Layers },
     { id: 'ledger', label: 'كشوف الحساب وسجل حركات العهدة', icon: FileSpreadsheet },
-    { id: 'settings', label: 'إعدادات الحساب', icon: Users },
+    { id: 'settings', label: 'إعدادات الحساب', icon: Sliders },
   ];
 
   const storekeeperNav = [
@@ -67,28 +66,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'pending', label: 'طلباتي المعلقة وحالة الاعتماد', icon: ClipboardCheck },
     { id: 'items', label: 'أصناف العهدة واقتراح صنف جديد', icon: Boxes },
     { id: 'inventory', label: 'إدخال العد الفعلي للجرد', icon: Layers },
-    { id: 'settings', label: 'إعدادات الحساب الشخصي', icon: Users },
+    { id: 'settings', label: 'إعدادات الحساب الشخصي', icon: Sliders },
   ];
 
   const navItems = isAdmin ? adminNav : isSupervisor ? supervisorNav : storekeeperNav;
 
   const content = (
-    <div className="flex flex-col h-full bg-slate-900 text-slate-300">
+    <div className="flex flex-col h-full bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 transition-colors select-none">
       {/* Sidebar Header / Brand */}
-      <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+      <div className="p-3.5 border-b border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between gap-2">
         {!isCollapsed && (
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white">
+          <div className="flex items-center gap-2.5 overflow-hidden">
+            <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-indigo-600/20">
               <Shield className="w-4 h-4" />
             </div>
-            <div>
-              <div className="text-xs font-bold text-white tracking-wide">
+            <div className="overflow-hidden">
+              <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
                 {isAdmin ? 'بوابة مسؤول النظام' : 'مساحة عمل العهدة'}
               </div>
-              <div className="text-[10px] text-slate-400">
-                {user?.custody_name || 'إدارة مركزية'}
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate font-medium">
+                {user?.custody_name || 'الإدارة المركزية'}
               </div>
             </div>
+          </div>
+        )}
+
+        {isCollapsed && (
+          <div className="mx-auto w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shadow-indigo-600/20">
+            <Shield className="w-4 h-4" />
           </div>
         )}
 
@@ -96,17 +101,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <button
           type="button"
           onClick={onCloseMobile}
-          className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+          className="md:hidden p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 transition-colors"
           aria-label="إغلاق القائمة"
         >
-          <X className="w-5 h-5" />
+          <X className="w-4 h-4" />
         </button>
 
         {/* Desktop collapse toggle */}
         <button
           type="button"
           onClick={onToggleCollapse}
-          className="hidden md:flex p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+          className="hidden md:flex p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           title={isCollapsed ? 'توسيع القائمة' : 'طي القائمة'}
           aria-label={isCollapsed ? 'توسيع القائمة' : 'طي القائمة'}
         >
@@ -115,7 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Navigation List */}
-      <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+      <nav className="flex-1 p-2.5 space-y-1 overflow-y-auto">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
@@ -129,10 +134,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 onCloseMobile();
               }}
               title={isCollapsed ? item.label : undefined}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all cursor-pointer ${
                 isActive
-                  ? 'bg-indigo-600 text-white shadow-sm font-semibold'
-                  : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                  ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/20 font-semibold'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100/90 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-white font-medium'
               } ${isCollapsed ? 'justify-center px-2' : ''}`}
             >
               <Icon className="w-4 h-4 shrink-0" />
@@ -144,7 +149,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Footer Info */}
       {!isCollapsed && (
-        <div className="p-3 border-t border-slate-800 text-[10px] text-slate-500 text-center">
+        <div className="p-3 border-t border-slate-200/80 dark:border-slate-800/80 text-[10px] text-slate-400 dark:text-slate-500 text-center">
           إصدار المواصفات 6.7 • وضع الشبكة المغلقة
         </div>
       )}
@@ -155,7 +160,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <>
       {/* Desktop / Tablet Sidebar */}
       <aside
-        className={`hidden md:block transition-all duration-200 border-l border-slate-800 shrink-0 select-none ${
+        className={`hidden md:block transition-all duration-200 border-l border-slate-200/90 dark:border-slate-800/90 shrink-0 select-none ${
           isCollapsed ? 'w-16' : 'w-64'
         }`}
       >
@@ -166,10 +171,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {isMobileOpen && (
         <div className="md:hidden fixed inset-0 z-50 flex">
           <div
-            className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs transition-opacity"
+            className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs transition-opacity"
             onClick={onCloseMobile}
           />
-          <div className="relative w-72 max-w-[80vw] h-full shadow-2xl z-10 animate-in slide-in-from-right duration-200">
+          <div className="relative w-72 max-w-[80vw] h-full shadow-2xl z-10 border-l border-slate-200 dark:border-slate-800 animate-in slide-in-from-right duration-200">
             {content}
           </div>
         </div>

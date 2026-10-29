@@ -309,15 +309,15 @@ export const CustodiesPage: React.FC = () => {
       </div>
 
       {/* Organizational Header: Company Entity Card */}
-      <div className="p-6 rounded-2xl bg-linear-to-r from-slate-900 via-indigo-950 to-slate-900 text-white border border-slate-800 shadow-sm relative overflow-hidden">
+      <div className="p-6 rounded-2xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 shadow-xs relative overflow-hidden transition-colors">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shadow-inner">
+            <div className="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-900/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shadow-xs">
               <Building2 className="w-7 h-7" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold tracking-wide">
+                <h2 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white">
                   {companyInfo.company_name || 'اسم الشركة'}
                 </h2>
                 <button
@@ -326,13 +326,13 @@ export const CustodiesPage: React.FC = () => {
                     setNewCompanyName(companyInfo.company_name || '');
                     setShowEditCompany(true);
                   }}
-                  className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                  className="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                   title="تعديل اسم الشركة"
                 >
                   <Edit2 className="w-3.5 h-3.5" />
                 </button>
               </div>
-              <p className="text-xs text-indigo-200/70 mt-0.5">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 الكيان المؤسسي المالك للمخازن والعهد المحاسبية
               </p>
             </div>
@@ -340,17 +340,17 @@ export const CustodiesPage: React.FC = () => {
 
           {/* Quick Metrics */}
           <div className="grid grid-cols-3 gap-3 text-center sm:text-right">
-            <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-              <span className="text-[11px] text-indigo-200/70 block">المخازن العامة</span>
-              <span className="text-lg font-bold text-emerald-400">{generalWarehouses.length}</span>
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block font-medium">المخازن العامة</span>
+              <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400 font-mono">{generalWarehouses.length}</span>
             </div>
-            <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-              <span className="text-[11px] text-indigo-200/70 block">العهد المحاسبية</span>
-              <span className="text-lg font-bold text-sky-400">{custodiesList.length}</span>
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block font-medium">العهد المحاسبية</span>
+              <span className="text-lg font-bold text-sky-600 dark:text-sky-400 font-mono">{custodiesList.length}</span>
             </div>
-            <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-              <span className="text-[11px] text-indigo-200/70 block">إجمالي المخازن</span>
-              <span className="text-lg font-bold text-indigo-300">{totalWarehousesCount}</span>
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 block font-medium">إجمالي المخازن</span>
+              <span className="text-lg font-bold text-indigo-600 dark:text-indigo-400 font-mono">{totalWarehousesCount}</span>
             </div>
           </div>
         </div>

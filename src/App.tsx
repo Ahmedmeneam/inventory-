@@ -51,9 +51,9 @@ function AppContent() {
 
   if (isCheckingSetup || isAuthLoading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white space-y-3">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
-        <p className="text-xs text-slate-400">جارٍ تهيئة الاتصال بالنظام...</p>
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center text-slate-900 dark:text-slate-100 space-y-3 transition-colors">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-600 dark:text-indigo-400" />
+        <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">جارٍ تهيئة الاتصال بالنظام...</p>
       </div>
     );
   }

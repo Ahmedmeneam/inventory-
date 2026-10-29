@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
+import { useTheme } from '../context/ThemeContext.tsx';
 import { validatePasswordStrength } from '../utils/rules.ts';
-import { ShieldCheck, Building2, User, Mail, Lock, Check, AlertCircle, ArrowLeft, Sparkles, RotateCcw, LogIn } from 'lucide-react';
+import { ShieldCheck, Building2, User, Mail, Lock, Check, AlertCircle, ArrowLeft, Sparkles, RotateCcw, LogIn, Sun, Moon } from 'lucide-react';
 import { FactoryResetModal } from '../components/common/FactoryResetModal.tsx';
 
 interface SetupWizardPageProps {
@@ -10,6 +11,7 @@ interface SetupWizardPageProps {
 
 export const SetupWizardPage: React.FC<SetupWizardPageProps> = ({ onSetupSuccess }) => {
   const { login } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [companyName, setCompanyName] = useState('');
   const [adminName, setAdminName] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
@@ -71,9 +73,31 @@ export const SetupWizardPage: React.FC<SetupWizardPageProps> = ({ onSetupSuccess
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col justify-center items-center p-4 sm:p-6 lg:p-8 dir-rtl font-sans selection:bg-indigo-500 selection:text-white">
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 flex flex-col justify-center items-center p-4 sm:p-6 lg:p-8 dir-rtl font-sans selection:bg-indigo-500 selection:text-white transition-colors relative">
+      {/* Top Bar with Brand & Theme Toggle */}
+      <div className="w-full max-w-xl mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm">
+            <Building2 className="w-4 h-4" />
+          </div>
+          <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+            نظام إدارة العهد والمخازن
+          </span>
+        </div>
+
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer shadow-xs"
+          title={theme === 'dark' ? 'التحويل للوضع النهاري (فاتح)' : 'التحويل للوضع الليلي (داكن)'}
+          aria-label="تبديل المظهر"
+        >
+          {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-500" />}
+        </button>
+      </div>
+
       {/* Container */}
-      <div className="max-w-xl w-full bg-white dark:bg-slate-950 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+      <div className="max-w-xl w-full bg-white dark:bg-slate-900 rounded-3xl shadow-xl border border-slate-200/80 dark:border-slate-800 overflow-hidden">
         {/* Wizard Header */}
         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 sm:p-8 text-white text-center relative overflow-hidden">
           <div className="absolute -top-12 -right-12 w-36 h-36 bg-indigo-500/20 rounded-full blur-2xl" />
