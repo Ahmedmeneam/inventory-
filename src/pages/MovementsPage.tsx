@@ -40,6 +40,8 @@ export const MovementsPage: React.FC = () => {
   const [sourceWarehouseId, setSourceWarehouseId] = useState<string>('');
   const [targetWarehouseId, setTargetWarehouseId] = useState<string>('');
   const [quantity, setQuantity] = useState<string>('');
+  const [trxNumber, setTrxNumber] = useState<string>('');
+  const [receiverPhone, setReceiverPhone] = useState<string>('');
 
   // Optional Fields (أماكن لباقي البيانات اختياري المستخدم يملاها أو يسيبها فاضية)
   const [docRef, setDocRef] = useState<string>('');
@@ -67,10 +69,11 @@ export const MovementsPage: React.FC = () => {
   const fetchMasterData = async () => {
     try {
       setLoading(true);
-      const [whRes, custRes, itRes] = await Promise.all([
+      const [whRes, custRes, itRes, trxRes] = await Promise.all([
         fetch('/api/warehouses'),
         fetch('/api/custodies'),
         fetch('/api/items'),
+        fetch('/api/movements/next-trx-number'),
       ]);
 
       if (whRes.ok) {
@@ -87,6 +90,10 @@ export const MovementsPage: React.FC = () => {
       if (itRes.ok) {
         const itData = await itRes.json();
         setItemsList(itData.items || []);
+      }
+      if (trxRes.ok) {
+        const numberData = await trxRes.json();
+        setTrxNumber((current) => current || numberData.nextTrxNumber || '');
       }
     } catch (err) {
       console.error('Error fetching movement master data:', err);
@@ -250,6 +257,7 @@ export const MovementsPage: React.FC = () => {
       docRef.trim() ? `[رقم المستند/الفاتورة: ${docRef.trim()}]` : null,
       partyName.trim() ? `[الجهة/المستلم/المورد: ${partyName.trim()}]` : null,
       department.trim() ? `[القسم/مركز التكلفة: ${department.trim()}]` : null,
+      receiverPhone.trim() ? `[هاتف المستلم: ${receiverPhone.trim()}]` : null,
       trxDate ? `[تاريخ المعاملة: ${trxDate}]` : null,
     ].filter(Boolean).join(' • ');
 
@@ -262,6 +270,7 @@ export const MovementsPage: React.FC = () => {
         quantity: Number(quantity),
         notes: optionalDetails || undefined,
         userId: user?.id,
+        trxNumber: trxNumber.trim() || undefined,
       };
 
       if (detectedType === 'addition') {
@@ -302,6 +311,8 @@ export const MovementsPage: React.FC = () => {
       setPartyName('');
       setDepartment('');
       setNotes('');
+      setReceiverPhone('');
+      setTrxNumber('');
       setIsDisposal(false);
       setDelegationCheck(null);
 
@@ -404,6 +415,17 @@ export const MovementsPage: React.FC = () => {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6 text-xs">
+            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">رقم العملية (تلقائي ويمكن تعديله)</label>
+                <input type="text" value={trxNumber} onChange={(e) => setTrxNumber(e.target.value)} placeholder="يُقترح رقم تلقائي" className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 font-mono" />
+                <p className="text-[11px] text-slate-500 mt-1">يُرفض الرقم إذا كان مستخدماً من قبل.</p>
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">رقم هاتف المستلم (اختياري)</label>
+                <input type="tel" value={receiverPhone} onChange={(e) => setReceiverPhone(e.target.value)} placeholder="رقم الهاتف" className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900" />
+              </div>
+            </div>
             {/* 1. Item Selection & Code with Two-Way Synchronization */}
             <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 space-y-3">
               <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
