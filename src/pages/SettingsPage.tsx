@@ -557,41 +557,44 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ companyName = 'إد�
             </div>
           </div>
 
-          {/* Danger Zone: Factory Reset for New Company */}
-          <div className="mt-6 pt-5 border-t border-rose-200 dark:border-rose-900/40 p-4 rounded-2xl bg-rose-50/70 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-rose-700 dark:text-rose-400 font-bold text-xs">
-                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
-                <span>إعادة ضبط المصنع وتصفير النظام لشركة جديدة</span>
+          {/* Danger Zone: Factory Reset - Admin Only */}
+          {user?.role === 'admin' && (
+            <div className="mt-6 pt-5 border-t border-rose-200 dark:border-rose-900/40 p-5 rounded-2xl bg-rose-50/70 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-rose-700 dark:text-rose-400 font-bold text-xs">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span>منطقة الخطر المؤمّنة: إعادة ضبط المصنع (مسؤول النظام فقط)</span>
+                </div>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 max-w-xl leading-relaxed">
+                  مسح كافة بيانات المنشأة وقواعد البيانات وسجلات العمليات بشكل نهائي لبدء دورة عمل لشركة جديدة عبر معالج التهيئة. يتطلب هذا الإجراء تأكيداً أمنياً مشدداً بكلمة المرور.
+                </p>
               </div>
-              <p className="text-[11px] text-slate-600 dark:text-slate-400 max-w-xl leading-relaxed">
-                مسح كافة بيانات المنشأة الحالية وسجلاتها نهائياً لإعادة تهيئة النظام لشركة جديدة عبر معالج التهيئة الأولي (Clean Slate).
-              </p>
-            </div>
 
-            <button
-              type="button"
-              onClick={() => setIsResetModalOpen(true)}
-              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-sm shadow-rose-600/20 flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>إعادة ضبط المصنع</span>
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={() => setIsResetModalOpen(true)}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-sm shadow-rose-600/20 flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>بدء إجراءات إعادة ضبط المصنع</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Factory Reset Modal */}
-      <FactoryResetModal
-        isOpen={isResetModalOpen}
-        onClose={() => setIsResetModalOpen(false)}
-        onResetSuccess={() => {
-          setIsResetModalOpen(false);
-          window.location.reload();
-        }}
-        companyName={companyName}
-        showAdminPasswordOption={true}
-      />
+      {/* Factory Reset Modal - Admin Only */}
+      {user?.role === 'admin' && (
+        <FactoryResetModal
+          isOpen={isResetModalOpen}
+          onClose={() => setIsResetModalOpen(false)}
+          onResetSuccess={() => {
+            setIsResetModalOpen(false);
+            window.location.reload();
+          }}
+          companyName={companyName}
+        />
+      )}
     </div>
   );
 };

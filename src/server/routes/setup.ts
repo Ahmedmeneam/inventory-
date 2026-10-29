@@ -149,30 +149,33 @@ setupRouter.post('/factory-reset', async (req: Request, res: Response) => {
   try {
     const { confirmationPhrase, adminPassword } = req.body;
 
-    // Check security confirmation
-    const validPhrase = confirmationPhrase && (
-      confirmationPhrase.trim() === 'إعادة ضبط المصنع' ||
-      confirmationPhrase.trim() === 'RESET-FACTORY' ||
-      confirmationPhrase.trim() === 'تصفير النظام'
-    );
-
-    let isAuthorized = false;
-
-    // If confirmation phrase is matched -> authorized
-    if (validPhrase) {
-      isAuthorized = true;
-    } else if (adminPassword) {
-      // Check if admin password is valid for the first admin
-      const adminUser = db.select().from(users).where(eq(users.role, 'admin')).get();
-      if (adminUser && adminUser.passwordHash) {
-        const matches = bcrypt.compareSync(adminPassword, adminUser.passwordHash);
-        if (matches) isAuthorized = true;
-      }
+    // Strict security: MUST verify the admin password against database
+    if (!adminPassword || typeof adminPassword !== 'string' || adminPassword.trim().length === 0) {
+      res.status(403).json({
+        error: 'إجراء محظور: يجب إدخال كلمة مرور مسؤول النظام الحالية لإتمام عملية إعادة ضبط المصنع.',
+      });
+      return;
     }
 
-    if (!isAuthorized) {
+    const adminUser = db.select().from(users).where(eq(users.role, 'admin')).get();
+    if (!adminUser || !adminUser.passwordHash) {
+      res.status(403).json({ error: 'لم يتم العثور على حساب مسؤول نظام مؤكد.' });
+      return;
+    }
+
+    const isPasswordValid = bcrypt.compareSync(adminPassword.trim(), adminUser.passwordHash);
+    if (!isPasswordValid) {
       res.status(403).json({
-        error: 'تصريح غير مقبول: يرجى كتابة عبارة التأكيد "إعادة ضبط المصنع" أو إدخال كلمة مرور مسؤول النظام للتأكيد الأمني.',
+        error: 'كلمة مرور مسؤول النظام غير صحيحة. تم إلغاء وحظر عملية إعادة ضبط المصنع لحماية بيانات المنشأة.',
+      });
+      return;
+    }
+
+    // Require exact security phrase
+    const REQUIRED_PHRASE = 'أوافق على الحذف النهائي وتصفير النظام بالكامل';
+    if (!confirmationPhrase || confirmationPhrase.trim() !== REQUIRED_PHRASE) {
+      res.status(400).json({
+        error: `يرجى كتابة عبارة التأكيد الأمنية المحددة بالكامل: "${REQUIRED_PHRASE}"`,
       });
       return;
     }

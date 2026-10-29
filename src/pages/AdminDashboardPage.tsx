@@ -115,8 +115,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          {!showGuide && (
+        {!showGuide && (
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               type="button"
               onClick={handleRestoreGuide}
@@ -125,17 +125,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNaviga
               <Sparkles className="w-3.5 h-3.5" />
               <span>إظهار دليل البدء التوجيهي</span>
             </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => onNavigate('custodies')}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-          >
-            <PlusCircle className="w-4 h-4" />
-            <span>إدارة العهد والمخازن</span>
-          </button>
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Dismissible Getting Started Guide */}

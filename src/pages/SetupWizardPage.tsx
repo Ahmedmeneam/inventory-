@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
 import { useTheme } from '../context/ThemeContext.tsx';
 import { validatePasswordStrength } from '../utils/rules.ts';
-import { ShieldCheck, Building2, User, Mail, Lock, Check, AlertCircle, ArrowLeft, Sparkles, RotateCcw, LogIn, Sun, Moon } from 'lucide-react';
-import { FactoryResetModal } from '../components/common/FactoryResetModal.tsx';
+import { ShieldCheck, Building2, User, Mail, Lock, Check, AlertCircle, ArrowLeft, Sparkles, LogIn, Sun, Moon } from 'lucide-react';
 
 interface SetupWizardPageProps {
   onSetupSuccess: (companyName: string) => void;
@@ -19,7 +18,6 @@ export const SetupWizardPage: React.FC<SetupWizardPageProps> = ({ onSetupSuccess
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
 
   // Live password validation criteria
   const hasMinLength = password.length >= 8;
@@ -123,7 +121,7 @@ export const SetupWizardPage: React.FC<SetupWizardPageProps> = ({ onSetupSuccess
                 <span>{error}</span>
               </div>
               {error.includes('مهيأ بالفعل') && (
-                <div className="pt-2 border-t border-rose-200/60 dark:border-rose-900/60 flex flex-wrap items-center gap-2">
+                <div className="pt-2 border-t border-rose-200/60 dark:border-rose-900/60 flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => window.location.reload()}
@@ -131,14 +129,6 @@ export const SetupWizardPage: React.FC<SetupWizardPageProps> = ({ onSetupSuccess
                   >
                     <LogIn className="w-3.5 h-3.5" />
                     <span>الانتقال لشاشة تسجيل الدخول</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsResetModalOpen(true)}
-                    className="px-3.5 py-1.5 rounded-xl bg-rose-600 text-white font-bold text-xs flex items-center gap-1.5 hover:bg-rose-700 transition-colors cursor-pointer"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>تصفير النظام لشركة جديدة (إعادة ضبط المصنع)</span>
                   </button>
                 </div>
               )}
@@ -304,31 +294,9 @@ export const SetupWizardPage: React.FC<SetupWizardPageProps> = ({ onSetupSuccess
             <p className="text-[11px] text-slate-400 text-center mt-2">
               * يُقفل هذا المعالج نهائياً بعد الحفظ لضمان سلامة وأمان النظام
             </p>
-
-            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-center">
-              <button
-                type="button"
-                onClick={() => setIsResetModalOpen(true)}
-                className="inline-flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 font-semibold transition-colors cursor-pointer"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>هل ترغب في إعادة ضبط المصنع ومسح أي بيانات لتأسيس شركة أخرى؟</span>
-              </button>
-            </div>
           </div>
         </form>
       </div>
-
-      {/* Factory Reset Modal */}
-      <FactoryResetModal
-        isOpen={isResetModalOpen}
-        onClose={() => setIsResetModalOpen(false)}
-        onResetSuccess={() => {
-          setIsResetModalOpen(false);
-          window.location.reload();
-        }}
-        showAdminPasswordOption={false}
-      />
     </div>
   );
 };

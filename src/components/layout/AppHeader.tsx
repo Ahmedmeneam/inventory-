@@ -23,6 +23,7 @@ import {
 
 interface AppHeaderProps {
   onToggleSidebar?: () => void;
+  isSidebarOpen?: boolean;
   companyName?: string;
   onNavigate?: (tab: string) => void;
   onLockScreen?: () => void;
@@ -30,6 +31,7 @@ interface AppHeaderProps {
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
   onToggleSidebar,
+  isSidebarOpen = true,
   companyName = 'إدارة العهد والمخازن',
   onNavigate,
   onLockScreen,
@@ -135,13 +137,18 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   return (
     <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800 px-4 py-2.5 transition-colors">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
-        {/* Left / Start: Mobile Menu Toggle & Brand */}
+        {/* Left / Start: 3-Lines Sidebar Toggle & Brand */}
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={onToggleSidebar}
-            className="md:hidden p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            aria-label="تبديل القائمة الجانبية"
+            className={`p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center border shadow-2xs ${
+              isSidebarOpen
+                ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800'
+                : 'bg-slate-100/90 dark:bg-slate-800/90 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700'
+            }`}
+            title="فتح / إغلاق القائمة الجانبية (3 خطوط)"
+            aria-label="فتح أو إغلاق القائمة الجانبية"
           >
             <Menu className="w-5 h-5" />
           </button>

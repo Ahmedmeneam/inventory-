@@ -185,8 +185,8 @@ inventoryRouter.post('/sessions', async (req: Request, res: Response) => {
       return;
     }
 
-    if (userRole && userRole !== 'supervisor' && userRole !== 'admin') {
-      res.status(403).json({ error: 'صلاحية بدء الجرد وتجميد المخزن محصورة برئيس القسم ومسؤول النظام' });
+    if (userRole === 'admin' || (userRole && userRole !== 'supervisor')) {
+      res.status(403).json({ error: 'صلاحية مرفوضة: لا يملك مسؤول النظام صلاحية بدء جلسات الجرد، هذه الصلاحية محصورة برئيس القسم الرقابي.' });
       return;
     }
 
@@ -385,8 +385,8 @@ inventoryRouter.post('/sessions/:id/complete', async (req: Request, res: Respons
     const sessionId = Number(req.params.id);
     const { userId, userRole, notes } = req.body;
 
-    if (userRole && userRole !== 'supervisor' && userRole !== 'admin') {
-      res.status(403).json({ error: 'صلاحية اعتماد محضر الجرد والتسويات محصورة برئيس القسم ومسؤول النظام' });
+    if (userRole === 'admin' || (userRole && userRole !== 'supervisor')) {
+      res.status(403).json({ error: 'صلاحية مرفوضة: لا يملك مسؤول النظام صلاحية اعتماد محضر الجرد، هذه الصلاحية محصورة برئيس القسم الرقابي.' });
       return;
     }
 

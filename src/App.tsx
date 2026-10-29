@@ -93,7 +93,24 @@ function AppContent() {
         ) : activeTab === 'items' ? (
           <ItemsPage />
         ) : activeTab === 'inventory' ? (
-          <InventoryPage />
+          <div className="p-8 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-center space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 mx-auto flex items-center justify-center font-bold text-lg">
+              !
+            </div>
+            <h2 className="text-base font-bold text-slate-800 dark:text-slate-200">
+              شاشة الجرد والتسويات مخصصة لرئيس القسم وأمين العهدة
+            </h2>
+            <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+              وفقاً لقواعد الفصل بين المهام الرقابية، أعمال الجرد الفعلي للمخازن والتسويات محصورة برئيس القسم وأمين العهدة الميداني وليست ضمن صلاحيات حساب مسؤول النظام.
+            </p>
+            <button
+              type="button"
+              onClick={() => setActiveTab('dashboard')}
+              className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold cursor-pointer"
+            >
+              العودة للوحة التحكم
+            </button>
+          </div>
         ) : activeTab === 'ledger' ? (
           <GeneralLedgerPage />
         ) : activeTab === 'movements' ? (

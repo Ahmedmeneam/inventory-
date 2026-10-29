@@ -17,12 +17,20 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
   onSelectTab,
   companyName,
 }) => {
+  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(true);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
   const { isIdleLocked, unlockIdleSession, lockScreen, user, logout } = useAuth();
   const [unlockPassword, setUnlockPassword] = useState('');
   const [unlockError, setUnlockError] = useState('');
   const [isUnlocking, setIsUnlocking] = useState(false);
+
+  const handleToggleSidebar = () => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setIsMobileSidebarOpen((prev) => !prev);
+    } else {
+      setIsDesktopSidebarOpen((prev) => !prev);
+    }
+  };
 
   const handleUnlockSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,26 +47,28 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
+    <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors overflow-hidden">
       <AppHeader
-        onToggleSidebar={() => setIsMobileSidebarOpen((prev) => !prev)}
+        onToggleSidebar={handleToggleSidebar}
+        isSidebarOpen={isDesktopSidebarOpen}
         companyName={companyName}
         onNavigate={onSelectTab}
         onLockScreen={lockScreen}
       />
 
-      <div className="flex-1 flex w-full">
+      <div className="flex-1 flex w-full overflow-hidden">
         <Sidebar
           activeTab={activeTab}
           onSelectTab={onSelectTab}
+          isDesktopOpen={isDesktopSidebarOpen}
           isMobileOpen={isMobileSidebarOpen}
           onCloseMobile={() => setIsMobileSidebarOpen(false)}
-          isCollapsed={isCollapsed}
-          onToggleCollapse={() => setIsCollapsed((prev) => !prev)}
         />
 
-        <main className="flex-1 overflow-x-hidden p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
-          {children}
+        <main className="flex-1 h-full overflow-y-auto">
+          <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
+            {children}
+          </div>
         </main>
       </div>
 
