@@ -8,22 +8,36 @@ import {
   custodies,
   items,
   units,
+  custodyItems,
   users,
   auditLogs,
   notifications,
 } from '../db/schema.ts';
-import { eq, and, sql, desc, count } from 'drizzle-orm';
-import { toMilli, fromMilli, formatTrxNumber, evaluateDelegationRule } from '../../utils/rules.ts';
+import { eq, and, or, sql, desc, count } from 'drizzle-orm';
+import { toMilli, fromMilli, formatTrxNumber, evaluateDelegationRule, getFiscalYear } from '../../utils/rules.ts';
 
 export const movementsRouter = Router();
 
 // =================== MOVEMENT TRANSACTIONS & NUMBERING ===================
 
-function getNextTrxNumber(): string {
-  const totalCount = db.select({ value: count() }).from(movements).get();
-  const nextSeq = (totalCount?.value || 0) + 1;
-  return formatTrxNumber(nextSeq);
+function getNextTrxNumber(date: Date = new Date()): string {
+  const fiscalYear = getFiscalYear(date);
+  const prefix = `TRX-${fiscalYear}-`;
+  const rows = db
+    .select({ trxNumber: movements.trxNumber })
+    .from(movements)
+    .where(sql`${movements.trxNumber} LIKE ${prefix + '%'}`)
+    .all();
+  const maxSequence = rows.reduce((max, row) => {
+    const match = row.trxNumber.match(new RegExp(`^TRX-${fiscalYear}-(\\d+)$`));
+    const sequence = match ? Number(match[1]) : 0;
+    return Number.isSafeInteger(sequence) ? Math.max(max, sequence) : max;
+  }, 0);
+  return formatTrxNumber(maxSequence + 1, date);
 }
+movementsRouter.get('/next-trx-number', (_req: Request, res: Response) => {
+  res.json({ nextTrxNumber: getNextTrxNumber() });
+});
 
 // GET /api/custodies/:id/movements - List movements with joins
 movementsRouter.get('/:id/movements', async (req: Request, res: Response) => {
@@ -48,6 +62,10 @@ movementsRouter.get('/:id/movements', async (req: Request, res: Response) => {
         approved_by: movements.approvedBy,
         approved_at: movements.approvedAt,
         rejection_reason: movements.rejectionReason,
+        receiver_name: movements.receiverName,
+        receiver_phone: movements.receiverPhone,
+        doc_ref: movements.docRef,
+        department: movements.department,
         item_name: items.name,
         item_code: items.itemCode,
         unit_name: units.name,
@@ -65,7 +83,7 @@ movementsRouter.get('/:id/movements', async (req: Request, res: Response) => {
     const all = query.all();
 
     // Map warehouse names
-    const allWarehouses = db.select().from(warehouses).where(eq(warehouses.custodyId, custodyId)).all();
+    const allWarehouses = db.select().from(warehouses).all();
     const whMap = new Map(allWarehouses.map((w) => [w.id, w.name]));
 
     let filtered = all.map((m) => ({
@@ -309,7 +327,7 @@ movementsRouter.delete('/:id/delegation-rules/:ruleId', async (req: Request, res
 movementsRouter.post('/:id/movements/add', async (req: Request, res: Response) => {
   try {
     const custodyId = Number(req.params.id);
-    const { targetWarehouseId, itemId, quantity, notes, userId } = req.body;
+    const { targetWarehouseId, itemId, quantity, notes, userId, trxNumber } = req.body;
 
     if (!targetWarehouseId || !itemId || !quantity) {
       res.status(400).json({ error: 'يرجى تحديد الصنف والمخزن والكمية' });
@@ -351,7 +369,11 @@ movementsRouter.post('/:id/movements/add', async (req: Request, res: Response) =
     // Atomic transaction: create movement, update stock (if direct), lock initial import permanently
     const transaction = sqlite.transaction(() => {
       const now = new Date().toISOString();
-      const trxNumber = getNextTrxNumber();
+      const requestedTrxNumber = typeof req.body.trxNumber === 'string' ? req.body.trxNumber.trim() : '';
+      const trxNumber = requestedTrxNumber || getNextTrxNumber();
+      if (db.select().from(movements).where(eq(movements.trxNumber, trxNumber)).get()) {
+        throw new Error(`رقم العملية ${trxNumber} مسجل مسبقاً`);
+      }
 
       // 1. Insert Movement (pending_approval if storekeeper, executed if supervisor/admin)
       const newMovement = db
@@ -455,7 +477,7 @@ movementsRouter.post('/:id/movements/add', async (req: Request, res: Response) =
 movementsRouter.post('/:id/movements/issue', async (req: Request, res: Response) => {
   try {
     const custodyId = Number(req.params.id);
-    const { sourceWarehouseId, itemId, quantity, notes, userId } = req.body;
+    const { sourceWarehouseId, itemId, quantity, notes, userId, trxNumber } = req.body;
 
     if (!sourceWarehouseId || !itemId || !quantity) {
       res.status(400).json({ error: 'يرجى تحديد الصنف والمخزن والكمية' });
@@ -533,7 +555,11 @@ movementsRouter.post('/:id/movements/issue', async (req: Request, res: Response)
     // Atomic transaction
     const transaction = sqlite.transaction(() => {
       const now = new Date().toISOString();
-      const trxNumber = getNextTrxNumber();
+      const requestedTrxNumber = typeof req.body.trxNumber === 'string' ? req.body.trxNumber.trim() : '';
+      const trxNumber = requestedTrxNumber || getNextTrxNumber();
+      if (db.select().from(movements).where(eq(movements.trxNumber, trxNumber)).get()) {
+        throw new Error(`رقم العملية ${trxNumber} مسجل مسبقاً`);
+      }
 
       const newMovement = db
         .insert(movements)
@@ -625,7 +651,7 @@ movementsRouter.post('/:id/movements/issue', async (req: Request, res: Response)
 movementsRouter.post('/:id/movements/transfer', async (req: Request, res: Response) => {
   try {
     const custodyId = Number(req.params.id);
-    const { sourceWarehouseId, targetWarehouseId, itemId, quantity, notes, userId } = req.body;
+    const { sourceWarehouseId, targetWarehouseId, itemId, quantity, notes, userId, trxNumber } = req.body;
 
     if (!sourceWarehouseId || !targetWarehouseId || !itemId || !quantity) {
       res.status(400).json({ error: 'يرجى استكمال بيانات التحويل الداخلي' });
@@ -688,7 +714,11 @@ movementsRouter.post('/:id/movements/transfer', async (req: Request, res: Respon
     // Atomic Transfer Transaction
     const transaction = sqlite.transaction(() => {
       const now = new Date().toISOString();
-      const trxNumber = getNextTrxNumber();
+      const requestedTrxNumber = typeof req.body.trxNumber === 'string' ? req.body.trxNumber.trim() : '';
+      const trxNumber = requestedTrxNumber || getNextTrxNumber();
+      if (db.select().from(movements).where(eq(movements.trxNumber, trxNumber)).get()) {
+        throw new Error(`رقم العملية ${trxNumber} مسجل مسبقاً`);
+      }
 
       // 1. Create movement
       const newMovement = db
@@ -817,7 +847,7 @@ movementsRouter.post('/:id/movements/transfer', async (req: Request, res: Respon
 movementsRouter.post('/:id/movements/disposal', async (req: Request, res: Response) => {
   try {
     const custodyId = Number(req.params.id);
-    const { sourceWarehouseId, itemId, quantity, notes, userId } = req.body;
+    const { sourceWarehouseId, itemId, quantity, notes, userId, trxNumber } = req.body;
 
     if (!sourceWarehouseId || !itemId || !quantity) {
       res.status(400).json({ error: 'يرجى تحديد الصنف والمخزن والكمية' });
@@ -865,7 +895,11 @@ movementsRouter.post('/:id/movements/disposal', async (req: Request, res: Respon
     // Atomic: create movement with status 'pending_approval' and reserve stock
     const transaction = sqlite.transaction(() => {
       const now = new Date().toISOString();
-      const trxNumber = getNextTrxNumber();
+      const requestedTrxNumber = typeof req.body.trxNumber === 'string' ? req.body.trxNumber.trim() : '';
+      const trxNumber = requestedTrxNumber || getNextTrxNumber();
+      if (db.select().from(movements).where(eq(movements.trxNumber, trxNumber)).get()) {
+        throw new Error(`رقم العملية ${trxNumber} مسجل مسبقاً`);
+      }
 
       const newMovement = db
         .insert(movements)
